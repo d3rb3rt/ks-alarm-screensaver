@@ -23,23 +23,29 @@ import me.jxl.kiosk.plugins.PluginHost;
 /**
  * While the chosen entity says the alarm rings, a black full screen overlay takes every touch and shows
  * the time, a big snooze label with the snooze count and a short hint. One tap runs the tap action, two
- * quick taps run the double tap action. The plugin never decides what the actions do: the user picks them
- * in the action settings.
+ * quick taps run the double tap action. The plugin counts the snoozes itself and, from a chosen maximum on,
+ * runs a limit action instead of snoozing. It never decides what the actions do: the user picks them
+ * (KS actions, Home Assistant services such as tts.speak, scripts) in the action settings.
  */
 public final class AlarmTapPlugin implements KioskPlugin {
     static final String OVERLAY = "ring";
     static final String TAP = "tapAction";
     static final String DOUBLE_TAP = "doubleTapAction";
+    static final String TAP_SAY = "tapSayAction";
+    static final String DOUBLE_TAP_SAY = "doubleTapSayAction";
+    static final String MAX_ACTION = "maxAction";
     private static final Pattern ENTITY = Pattern.compile("[a-z0-9_]+\\.[a-z0-9_]+");
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private volatile PluginHost host;
     private String entity = "";
-    private String counterEntity = "";
     private String hint = "";
     private String label = "Snooze";
     private boolean showClock = true;
     private int count;
+    private volatile int maxSnooze;
+    private volatile long resetMs = 30L * 60000L;
+    private long lastSnooze;
     private volatile int windowMs = 350;
     private boolean showing;
     /** Main thread only: the single tap that waits to see whether a second one follows. */
@@ -66,22 +72,17 @@ public final class AlarmTapPlugin implements KioskPlugin {
         showClock = nextClock;
 
         String next = entityId(settings.get("ringing"));
-        String nextCounter = entityId(settings.get("counter"));
-        if (nextCounter.equals(next)) nextCounter = "";
+        Object max = settings.get("maxSnooze");
+        maxSnooze = max instanceof Number ? Math.max(0, ((Number) max).intValue()) : 0;
+        Object reset = settings.get("resetMinutes");
+        resetMs = (reset instanceof Number ? Math.max(1, ((Number) reset).intValue()) : 30) * 60000L;
         boolean changed = !next.equals(entity);
-        boolean counterChanged = !nextCounter.equals(counterEntity);
-        if (counterChanged) {
-            if (!counterEntity.isEmpty()) host.unsubscribe("ha.entity." + counterEntity);
-            counterEntity = nextCounter;
-            count = 0;
-            if (!counterEntity.isEmpty()) host.subscribe("ha.entity." + counterEntity);
-        }
         if (changed) {
             if (!entity.isEmpty()) host.unsubscribe("ha.entity." + entity);
             entity = next;
             hide();
             if (!entity.isEmpty()) host.subscribe("ha.entity." + entity);
-        } else if ((textChanged || counterChanged) && showing) {
+        } else if (textChanged && showing) {
             show();
         }
         host.status(entity.isEmpty() ? "Choose the alarm ringing entity in the settings." : "Watching " + entity, entity.isEmpty());
@@ -106,22 +107,13 @@ public final class AlarmTapPlugin implements KioskPlugin {
             boolean ringing = "on".equals(payload.get("state"));
             host.log("alarm-tap event " + payload.get("state") + " showing=" + showing);
             if (ringing == showing) return;
-            if (ringing) show(); else hide();
-        } else if (!counterEntity.isEmpty() && event.equals("ks.ha.entity." + counterEntity)) {
-            int next = parseCount(payload.get("state"));
-            host.log("alarm-tap counter " + next);
-            if (next == count) return;
-            count = next;
-            if (showing) show();
-        }
-    }
-
-    private static int parseCount(Object state) {
-        if (!(state instanceof String)) return 0;
-        try {
-            return Math.max(0, (int) Math.round(Double.parseDouble(((String) state).trim())));
-        } catch (NumberFormatException notANumber) {
-            return 0;
+            if (ringing) {
+                // A snooze makes the alarm ring again: only a long pause means a new alarm.
+                if (System.currentTimeMillis() - lastSnooze > resetMs) count = 0;
+                show();
+            } else {
+                hide();
+            }
         }
     }
 
@@ -131,7 +123,6 @@ public final class AlarmTapPlugin implements KioskPlugin {
         main.removeCallbacksAndMessages(null);
         host = null;
         entity = "";
-        counterEntity = "";
     }
 
     private void show() {
@@ -219,16 +210,45 @@ public final class AlarmTapPlugin implements KioskPlugin {
     private void onTap() {
         if (pendingTap != null) {
             cancelPending();
-            run(DOUBLE_TAP);
+            doStop();
             return;
         }
         pendingTap = new Runnable() {
             @Override public void run() {
                 pendingTap = null;
-                AlarmTapPlugin.this.run(TAP);
+                doSnooze();
             }
         };
         main.postDelayed(pendingTap, windowMs);
+    }
+
+    /** Main thread. Tap: snooze and count, or at the limit only the limit action. */
+    private void doSnooze() {
+        if (maxSnooze > 0 && count >= maxSnooze) {
+            run(MAX_ACTION);
+            return;
+        }
+        count++;
+        lastSnooze = System.currentTimeMillis();
+        run(TAP_SAY);
+        run(TAP);
+        refresh();
+    }
+
+    /** Main thread. Double tap: say, stop, and start counting from zero. */
+    private void doStop() {
+        run(DOUBLE_TAP_SAY);
+        run(DOUBLE_TAP);
+        count = 0;
+        lastSnooze = 0;
+    }
+
+    private synchronized void refresh() {
+        if (showing && host != null) show();
+    }
+
+    private static boolean isOptional(String setting) {
+        return setting.equals(TAP_SAY) || setting.equals(DOUBLE_TAP_SAY) || setting.equals(MAX_ACTION);
     }
 
     private void run(final String setting) {
@@ -237,7 +257,7 @@ public final class AlarmTapPlugin implements KioskPlugin {
         try {
             current.runAction(setting, new PluginHost.CommandCallback() {
                 @Override public void onResult(boolean ok, Object data, String error) {
-                    if (!ok) current.status(setting + ": " + error, true);
+                    if (!ok && !isOptional(setting)) current.status(setting + ": " + error, true);
                 }
             });
         } catch (RuntimeException failure) {

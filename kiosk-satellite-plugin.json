@@ -2,18 +2,17 @@
   "schemaVersion": 1,
   "id": "alarm-tap",
   "name": "Alarm Tap",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "apiVersion": 1,
   "minAndroidSdk": 24,
   "minAppVersion": "2026.11.14",
   "entryClass": "me.jxl.kiosk.plugins.alarmtap.AlarmTapPlugin",
-  "description": "While an alarm rings, a black screen shows the time, a big snooze label with the snooze count and a hint. A tap anywhere runs one action (for example snooze) and a double tap runs another (for example stop). You choose the Home Assistant entity that tells when the alarm rings, an optional snooze counter and the two actions.",
+  "description": "While an alarm rings, a black screen shows the time, a big snooze label with the snooze count and a hint. A tap runs one action (for example snooze) and a double tap another (for example stop). The plugin counts the snoozes and can limit them. Every step can also run an action of its own, such as a spoken announcement.",
   "author": "d3rb3rt",
   "license": "MIT",
   "capabilities": [
     "overlay",
-    "host.read",
-    "ha"
+    "host.read"
   ],
   "settings": [
     {
@@ -23,14 +22,6 @@
       "default": "",
       "group": "Alarm",
       "description": "A binary sensor that is on while the alarm rings, such as the kiosk's Alarm ringing sensor."
-    },
-    {
-      "key": "counter",
-      "type": "entity",
-      "title": "Snooze counter entity",
-      "default": "",
-      "group": "Alarm",
-      "description": "Optional counter whose value is shown after the snooze label, such as a counter helper that counts snoozes. Hidden while it is 0."
     },
     {
       "key": "snoozeLabel",
@@ -57,12 +48,59 @@
       "description": "Runs on a single tap while the alarm rings, for example a script that snoozes."
     },
     {
+      "key": "tapSayAction",
+      "type": "action",
+      "title": "Tap announcement",
+      "default": {},
+      "group": "Alarm",
+      "description": "Optional. Runs just before the tap action, for example the service tts.speak with a text."
+    },
+    {
       "key": "doubleTapAction",
       "type": "action",
       "title": "Double tap action",
       "default": {},
       "group": "Alarm",
       "description": "Runs on a double tap while the alarm rings, for example a script that stops it."
+    },
+    {
+      "key": "doubleTapSayAction",
+      "type": "action",
+      "title": "Double tap announcement",
+      "default": {},
+      "group": "Alarm",
+      "description": "Optional. Runs just before the double tap action, for example the service tts.speak with a text."
+    },
+    {
+      "key": "maxSnooze",
+      "type": "number",
+      "title": "Maximum snoozes",
+      "default": 0,
+      "min": 0,
+      "max": 20,
+      "step": 1,
+      "group": "Alarm",
+      "description": "0 means unlimited. Once this many snoozes are used, a tap runs the limit action instead of the tap action."
+    },
+    {
+      "key": "maxAction",
+      "type": "action",
+      "title": "Limit action",
+      "default": {},
+      "group": "Alarm",
+      "description": "Optional. Runs on a tap when the maximum is reached, for example a spoken message. The alarm keeps ringing."
+    },
+    {
+      "key": "resetMinutes",
+      "type": "number",
+      "title": "New alarm after",
+      "default": 30,
+      "min": 5,
+      "max": 180,
+      "step": 5,
+      "unit": "min",
+      "group": "Alarm",
+      "description": "The count starts again when the alarm rings after a pause longer than this."
     },
     {
       "key": "doubleTapMs",
