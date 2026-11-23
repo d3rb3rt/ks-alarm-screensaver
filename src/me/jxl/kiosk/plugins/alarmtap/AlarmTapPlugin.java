@@ -38,6 +38,8 @@ import me.jxl.kiosk.plugins.PluginHost;
  */
 public final class AlarmTapPlugin implements KioskPlugin {
     static final String OVERLAY = "ring";
+    static final String REQUIREMENT = "Needs the Clock or Weather Mood screensaver with Let alarms take over. "
+        + "Without it, KS's own alarm screen covers this plugin.";
     static final String TAP = "tapAction";
     static final String DOUBLE_TAP = "doubleTapAction";
     private static final Pattern ENTITY = Pattern.compile("[a-z0-9_]+\\.[a-z0-9_]+");
@@ -123,7 +125,8 @@ public final class AlarmTapPlugin implements KioskPlugin {
         } else if (textChanged && showing) {
             show();
         }
-        host.status(entity.isEmpty() ? "Choose the alarm ringing entity in the settings." : "Watching " + entity, entity.isEmpty());
+        // Shown in red on purpose: the plugin cannot read whether the screensaver takes over alarms.
+        host.status(entity.isEmpty() ? "Choose the alarm ringing entity in the settings." : REQUIREMENT, true);
     }
 
     private static int percent(Object value, int fallback) {
