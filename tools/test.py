@@ -25,6 +25,6 @@ def tool(name):
 sdk_root = Path(os.environ.get('ANDROID_HOME', os.environ.get('ANDROID_SDK_ROOT', str(Path.home() / 'android-sdk'))))
 platform = str(android_platform(sdk_root))
 sources = [*sorted((root / 'sdk/src').rglob('*.java')), *sorted((root / 'src').rglob('*.java'))]
-with tempfile.TemporaryDirectory(prefix='alarm-tap-test-') as directory:
+with tempfile.TemporaryDirectory(prefix='snooze-screensaver-test-') as directory:
     subprocess.run([tool('javac'), '--release', '8', '-cp', platform, '-d', directory, *map(str, sources)], check=True)
 print('ok')

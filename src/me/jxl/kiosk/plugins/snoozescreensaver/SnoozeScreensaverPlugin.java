@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-package me.jxl.kiosk.plugins.alarmtap;
+package me.jxl.kiosk.plugins.snoozescreensaver;
 
 import android.content.Context;
 import android.graphics.Color;
@@ -36,7 +36,7 @@ import me.jxl.kiosk.plugins.PluginHost;
  * (KS actions, Home Assistant services, scripts) in the action settings. Spoken texts go through a Home
  * Assistant service of your choice; {n}, {total}, {length} and {max} in them become the snooze count, the total snooze minutes, the minutes of one snooze and the limit.
  */
-public final class AlarmTapPlugin implements KioskPlugin {
+public final class SnoozeScreensaverPlugin implements KioskPlugin {
     static final String OVERLAY = "ring";
     static final String REQUIREMENT = "Needs the Clock or Weather Mood screensaver with Let alarms take over. "
         + "Without it, KS's own alarm screen covers this plugin.";
@@ -77,7 +77,7 @@ public final class AlarmTapPlugin implements KioskPlugin {
     @Override
     public synchronized void start(PluginHost host, Map<String, Object> settings) {
         this.host = host;
-        host.log("alarm-tap started");
+        host.log("snooze-screensaver started");
         configure(settings);
         host.subscribe("device.key");
     }
@@ -196,7 +196,7 @@ public final class AlarmTapPlugin implements KioskPlugin {
             onKey(payload);
         } else if (event.equals("ks.ha.entity." + entity)) {
             boolean ringing = "on".equals(payload.get("state"));
-            host.log("alarm-tap event " + payload.get("state") + " showing=" + showing);
+            host.log("snooze-screensaver event " + payload.get("state") + " showing=" + showing);
             if (ringing == showing) return;
             if (ringing) {
                 // A snooze makes the alarm ring again: only a long pause means a new alarm.
@@ -272,7 +272,7 @@ public final class AlarmTapPlugin implements KioskPlugin {
                 }
             });
         } catch (RuntimeException failure) {
-            host.log("alarm-tap overlay failed: " + failure);
+            host.log("snooze-screensaver overlay failed: " + failure);
             host.status("Overlay failed: " + failure.getMessage(), true);
         }
     }
