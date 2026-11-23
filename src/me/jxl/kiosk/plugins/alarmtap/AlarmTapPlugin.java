@@ -29,7 +29,7 @@ import me.jxl.kiosk.plugins.PluginHost;
  * quick taps run the double tap action. The plugin counts the snoozes itself and, from a chosen maximum on,
  * runs a limit action instead of snoozing. It never decides what the actions do: the user picks them
  * (KS actions, Home Assistant services, scripts) in the action settings. Spoken texts go through a Home
- * Assistant service of your choice; {n} and {max} in them become the snooze count and the limit.
+ * Assistant service of your choice; {n}, {max} and {min} in them become the snooze count, the limit and the total snooze time in minutes.
  */
 public final class AlarmTapPlugin implements KioskPlugin {
     static final String OVERLAY = "ring";
@@ -45,6 +45,7 @@ public final class AlarmTapPlugin implements KioskPlugin {
     private boolean showClock = true;
     private int count;
     private volatile int maxSnooze;
+    private volatile int snoozeMinutes = 5;
     private volatile long resetMs = 30L * 60000L;
     private long lastSnooze;
     private volatile String sayService = "";
@@ -80,6 +81,8 @@ public final class AlarmTapPlugin implements KioskPlugin {
         String next = entityId(settings.get("ringing"));
         Object max = settings.get("maxSnooze");
         maxSnooze = max instanceof Number ? Math.max(0, ((Number) max).intValue()) : 0;
+        Object length = settings.get("snoozeMinutes");
+        snoozeMinutes = length instanceof Number ? Math.max(0, ((Number) length).intValue()) : 5;
         Object reset = settings.get("resetMinutes");
         resetMs = (reset instanceof Number ? Math.max(1, ((Number) reset).intValue()) : 30) * 60000L;
         sayService = text(settings.get("sayService"));
@@ -281,7 +284,8 @@ public final class AlarmTapPlugin implements KioskPlugin {
             current.status("Speak data is not valid JSON: " + badJson.getMessage(), true);
             return;
         }
-        data.put("message", template.replace("{n}", String.valueOf(count)).replace("{max}", String.valueOf(maxSnooze)));
+        data.put("message", template.replace("{n}", String.valueOf(count)).replace("{max}", String.valueOf(maxSnooze))
+            .replace("{min}", String.valueOf(count * snoozeMinutes)));
         Map<String, Object> message = new HashMap<String, Object>();
         message.put("type", "call_service");
         message.put("domain", sayService.substring(0, dot));

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "alarm-tap",
   "name": "Alarm Tap",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "apiVersion": 1,
   "minAndroidSdk": 24,
   "minAppVersion": "2026.11.14",
@@ -55,6 +55,18 @@
       "default": {},
       "group": "Alarm",
       "description": "Runs on a double tap while the alarm rings, for example a script that stops it."
+    },
+    {
+      "key": "snoozeMinutes",
+      "type": "number",
+      "title": "Snooze length",
+      "default": 5,
+      "min": 1,
+      "max": 60,
+      "step": 1,
+      "unit": "min",
+      "group": "Alarm",
+      "description": "Length of one snooze as set in Kiosk Satellite. Used for {min} in the texts: the snooze count times this value."
     },
     {
       "key": "maxSnooze",
@@ -121,7 +133,7 @@
       "title": "Text on tap",
       "default": "Schlummer {n}",
       "group": "Speech",
-      "description": "Spoken when a tap snoozes. {n} is the snooze count, {max} the limit. Empty means silence."
+      "description": "Spoken when a tap snoozes. {n} is the snooze count, {min} the total snooze time in minutes, {max} the limit. Empty means silence."
     },
     {
       "key": "stopText",
