@@ -2,12 +2,12 @@
   "schemaVersion": 1,
   "id": "alarm-tap",
   "name": "Alarm Tap",
-  "version": "1.3.2",
+  "version": "1.4.0",
   "apiVersion": 1,
   "minAndroidSdk": 24,
   "minAppVersion": "2026.11.14",
   "entryClass": "me.jxl.kiosk.plugins.alarmtap.AlarmTapPlugin",
-  "description": "While an alarm rings, a black screen shows the time, a big snooze label with the snooze count and a hint. A tap runs one action (for example snooze) and a double tap another (for example stop). The plugin counts the snoozes, can limit them and can speak a text for each step, with the snooze count in it.",
+  "description": "While an alarm rings, a black screen shows the time, a big snooze label with the snooze count and a hint. A tap or a hardware key runs one action (for example snooze), a double tap or a second key press another (for example stop). The plugin counts the snoozes, can limit them and can speak a text for each step, with the snooze count in it.",
   "author": "d3rb3rt",
   "license": "MIT",
   "capabilities": [
@@ -102,6 +102,26 @@
       "unit": "ms",
       "group": "Alarm",
       "description": "A single tap runs after this wait, unless a second tap follows within it."
+    },
+    {
+      "key": "keys",
+      "type": "string",
+      "title": "Hardware keys",
+      "default": "VOLUME_UP,VOLUME_DOWN",
+      "group": "Keys",
+      "description": "Comma-separated Android key names without KEYCODE_. While the alarm rings, a press snoozes at once and a second press within the key window stops it. While it is snoozed, a press stops it. Empty means keys are not used. Turn on Kiosk Satellite's option to swallow the volume keys if they should not change the volume."
+    },
+    {
+      "key": "keyWindowMs",
+      "type": "number",
+      "title": "Second key press window",
+      "default": 600,
+      "min": 200,
+      "max": 1500,
+      "step": 50,
+      "unit": "ms",
+      "group": "Keys",
+      "description": "A second key press within this time after a key snooze stops the alarm."
     },
     {
       "key": "hint",

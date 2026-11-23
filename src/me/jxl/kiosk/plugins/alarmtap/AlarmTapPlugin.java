@@ -13,6 +13,8 @@ import android.widget.LinearLayout;
 import android.widget.TextClock;
 import android.widget.TextView;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.Iterator;
 import java.util.Map;
 import org.json.JSONObject;
@@ -27,7 +29,7 @@ import me.jxl.kiosk.plugins.PluginHost;
  * While the chosen entity says the alarm rings, a black full screen overlay takes every touch and shows
  * the time, a big snooze label with the snooze count and a short hint. One tap runs the tap action, two
  * quick taps run the double tap action. The plugin counts the snoozes itself and, from a chosen maximum on,
- * runs a limit action instead of snoozing. It never decides what the actions do: the user picks them
+ * refuses further snoozes. Hardware keys can snooze and stop as well. It never decides what the actions do: the user picks them
  * (KS actions, Home Assistant services, scripts) in the action settings. Spoken texts go through a Home
  * Assistant service of your choice; {n}, {max} and {min} in them become the snooze count, the limit and the total snooze time in minutes.
  */
@@ -51,6 +53,10 @@ public final class AlarmTapPlugin implements KioskPlugin {
     private volatile int maxVolume = 100;
     private volatile long resetMs = 30L * 60000L;
     private long lastSnooze;
+    private volatile Set<String> keys = new HashSet<String>();
+    private volatile int keyWindowMs = 600;
+    /** Main thread only: when a key last snoozed, for the second press that stops. */
+    private long lastKeySnooze;
     private volatile String sayService = "";
     private volatile String sayData = "";
     private volatile String tapText = "";
@@ -66,6 +72,7 @@ public final class AlarmTapPlugin implements KioskPlugin {
         this.host = host;
         host.log("alarm-tap started");
         configure(settings);
+        host.subscribe("device.key");
     }
 
     @Override
@@ -87,6 +94,9 @@ public final class AlarmTapPlugin implements KioskPlugin {
         tapVolume = percent(settings.get("tapVolume"), 50);
         stopVolume = percent(settings.get("stopVolume"), 100);
         maxVolume = percent(settings.get("maxVolume"), 100);
+        keys = parseKeys(text(settings.get("keys")));
+        Object kw = settings.get("keyWindowMs");
+        keyWindowMs = kw instanceof Number ? ((Number) kw).intValue() : 600;
         Object length = settings.get("snoozeMinutes");
         snoozeMinutes = length instanceof Number ? Math.max(0, ((Number) length).intValue()) : 5;
         Object reset = settings.get("resetMinutes");
@@ -112,6 +122,16 @@ public final class AlarmTapPlugin implements KioskPlugin {
         return value instanceof Number ? Math.max(0, Math.min(100, ((Number) value).intValue())) : fallback;
     }
 
+    static Set<String> parseKeys(String list) {
+        Set<String> out = new HashSet<String>();
+        for (String part : list.split(",")) {
+            String key = part.trim().toUpperCase();
+            if (key.startsWith("KEYCODE_")) key = key.substring("KEYCODE_".length());
+            if (!key.isEmpty()) out.add(key);
+        }
+        return out;
+    }
+
     private static String text(Object value) {
         return value instanceof String ? ((String) value).trim() : "";
     }
@@ -127,7 +147,9 @@ public final class AlarmTapPlugin implements KioskPlugin {
     @Override
     public synchronized void onEvent(String event, Map<String, Object> payload) {
         if (host == null || entity.isEmpty()) return;
-        if (event.equals("ks.ha.entity." + entity)) {
+        if (event.equals("ks.device.key")) {
+            onKey(payload);
+        } else if (event.equals("ks.ha.entity." + entity)) {
             boolean ringing = "on".equals(payload.get("state"));
             host.log("alarm-tap event " + payload.get("state") + " showing=" + showing);
             if (ringing == showing) return;
@@ -138,6 +160,40 @@ public final class AlarmTapPlugin implements KioskPlugin {
             } else {
                 hide();
             }
+        }
+    }
+
+    /**
+     * A hardware key while the alarm rings or is snoozed. Ringing: the first press snoozes at once, a second
+     * press within the key window stops. Snoozed: a press stops. Otherwise keys are left alone.
+     */
+    private void onKey(Map<String, Object> payload) {
+        if (keys.isEmpty() || !"down".equals(payload.get("action"))) return;
+        Object repeat = payload.get("repeat");
+        if (repeat instanceof Number && ((Number) repeat).intValue() != 0) return;
+        String key = String.valueOf(payload.get("key")).toUpperCase();
+        if (!keys.contains(key)) return;
+        final boolean ringing = showing;
+        main.post(new Runnable() {
+            @Override public void run() { handleKey(ringing); }
+        });
+    }
+
+    /** Main thread. */
+    private void handleKey(boolean ringing) {
+        long now = System.currentTimeMillis();
+        boolean secondPress = lastKeySnooze > 0 && now - lastKeySnooze <= keyWindowMs;
+        boolean snoozed = !ringing && lastSnooze > 0
+            && now < lastSnooze + snoozeMinutes * 60000L + 120000L;
+        if (secondPress || (snoozed && !ringing)) {
+            cancelPending();
+            lastKeySnooze = 0;
+            doStop();
+        } else if (ringing) {
+            cancelPending();
+            int before = count;
+            doSnooze();
+            lastKeySnooze = count > before ? now : 0;
         }
     }
 

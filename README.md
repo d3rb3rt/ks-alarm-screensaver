@@ -10,6 +10,7 @@ A Kiosk Satellite plugin. While an alarm rings, a tap anywhere on the screen run
 - Both are Kiosk Satellite action settings, so you pick anything the Gestures page offers, such as the KS actions for snooze and stop, a Home Assistant service or a script. The plugin does not know what they do.
 - The plugin counts the snoozes itself. With **Maximum snoozes** set, a tap that would exceed it speaks the limit text instead of snoozing, so the alarm keeps ringing. A double tap stops the alarm and resets the count. The count also starts again when the alarm rings after a long pause.
 - Each step can speak a text through a Home Assistant service you name (default: the kiosk's own announce service). `{n}` in the text becomes the snooze count, `{min}` the total snooze time in minutes (count times **Snooze length**) and `{max}` the limit.
+- Hardware keys (default: both volume keys): while the alarm rings, a press snoozes at once and a second press within the key window stops it. While the alarm is snoozed (the plugin remembers its own snooze and the snooze length), a press stops it. Keys work without the overlay. Turn on Kiosk Satellite's option to swallow the volume keys if they should not change the volume.
 - When the entity turns `off`, the overlay goes away.
 
 ## Settings
@@ -24,6 +25,8 @@ A Kiosk Satellite plugin. While an alarm rings, a tap anywhere on the screen run
 | Volume per text | Percent, sent as the field `volume`; 0 sends none |
 | Text on tap / double tap / at the limit | Spoken texts, `{n}` = snooze count, `{max}` = limit |
 | Double tap action | Runs on a double tap, for example stop |
+| Hardware keys | Android key names, default `VOLUME_UP,VOLUME_DOWN`, empty for none |
+| Second key press window | A second press within this time stops, default 600 ms |
 | Snooze length | Length of one snooze as set in KS, for `{min}` |
 | Maximum snoozes | 0 for unlimited; from this count on, a tap is refused and the limit text is spoken |
 | New alarm after | Pause in minutes after which the count starts again |
