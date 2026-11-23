@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "id": "alarm-tap",
+  "name": "Alarm Tap",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "minAndroidSdk": 24,
+  "minAppVersion": "2026.11.14",
+  "entryClass": "me.jxl.kiosk.plugins.alarmtap.AlarmTapPlugin",
+  "description": "While an alarm rings, a tap anywhere on the screen runs one action (for example snooze) and a double tap runs another (for example stop). You choose the Home Assistant entity that tells when the alarm rings and the two actions.",
+  "author": "d3rb3rt",
+  "license": "MIT",
+  "capabilities": ["overlay", "host.read"],
+  "settings": [
+    {
+      "key": "ringing",
+      "type": "entity",
+      "title": "Alarm ringing entity",
+      "default": "",
+      "group": "Alarm",
+      "description": "A binary sensor that is on while the alarm rings, such as the kiosk's Alarm ringing sensor."
+    },
+    {
+      "key": "tapAction",
+      "type": "action",
+      "title": "Tap action",
+      "default": {},
+      "group": "Alarm",
+      "description": "Runs on a single tap while the alarm rings, for example a script that snoozes."
+    },
+    {
+      "key": "doubleTapAction",
+      "type": "action",
+      "title": "Double tap action",
+      "default": {},
+      "group": "Alarm",
+      "description": "Runs on a double tap while the alarm rings, for example a script that stops it."
+    },
+    {
+      "key": "doubleTapMs",
+      "type": "number",
+      "title": "Double tap window",
+      "default": 350,
+      "min": 200,
+      "max": 600,
+      "step": 50,
+      "unit": "ms",
+      "group": "Alarm",
+      "description": "A single tap runs after this wait, unless a second tap follows within it."
+    },
+    {
+      "key": "hint",
+      "type": "string",
+      "title": "Hint text",
+      "default": "Tap: snooze · Double tap: stop",
+      "group": "Alarm",
+      "description": "Shown at the bottom while the alarm rings. Leave empty for no hint."
+    }
+  ]
+}
