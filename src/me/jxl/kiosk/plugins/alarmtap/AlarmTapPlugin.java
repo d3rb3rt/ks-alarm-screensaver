@@ -199,39 +199,10 @@ public final class AlarmTapPlugin implements KioskPlugin {
                 // A snooze makes the alarm ring again: only a long pause means a new alarm.
                 if (System.currentTimeMillis() - lastSnooze > resetMs) count = 0;
                 show();
-                checkTakeover();
             } else {
                 hide();
             }
         }
-    }
-
-    /**
-     * KS draws its own alarm screen above plugin overlays unless a screensaver takes the alarm over. Shortly after
-     * the alarm starts, look whether a screensaver is on and say so on the plugin page if it is not.
-     */
-    private void checkTakeover() {
-        main.postDelayed(new Runnable() {
-            @Override public void run() {
-                final PluginHost current = host;
-                if (current == null || !showing) return;
-                try {
-                    current.executeCommand("isScreensaverActive", new HashMap<String, Object>(), new PluginHost.CommandCallback() {
-                        @Override public void onResult(boolean ok, Object data, String error) {
-                            if (!ok) return;
-                            if (Boolean.TRUE.equals(data)) {
-                                current.status("Alarm shown through the screensaver takeover", false);
-                            } else {
-                                current.status("The alarm rang without a screensaver, so KS's alarm screen covered this "
-                                    + "plugin. Use the Clock or Weather Mood screensaver with Let alarms take over.", true);
-                            }
-                        }
-                    });
-                } catch (RuntimeException ignored) {
-                    // Older hosts: nothing to check.
-                }
-            }
-        }, 3000);
     }
 
     /**
