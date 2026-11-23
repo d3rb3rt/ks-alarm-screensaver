@@ -383,6 +383,10 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
     }
 
     private View build(Context context, KsTheme theme, boolean clock, String title, String shownHint) {
+        // Size the text to the screen: small clocks are only about 360 dp high.
+        android.util.DisplayMetrics metrics = context.getResources().getDisplayMetrics();
+        float heightDp = metrics.heightPixels / metrics.density;
+        float scale = Math.max(0.5f, Math.min(1.5f, heightDp / 480f));
         FrameLayout root = new FrameLayout(context);
         root.setBackgroundColor(Color.BLACK);
         LinearLayout column = new LinearLayout(context);
@@ -393,29 +397,33 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
             time.setFormat24Hour("HH:mm");
             time.setFormat12Hour("HH:mm");
             time.setGravity(Gravity.CENTER);
-            theme.styleText(time, 72, 300, "onSurface");
+            theme.styleText(time, Math.round(64 * scale), 300, "onSurface");
             time.setTextColor(0xB3FFFFFF);
+            time.setIncludeFontPadding(false);
             column.addView(time, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         }
         TextView big = new TextView(context);
         big.setText(title);
         big.setGravity(Gravity.CENTER);
-        theme.styleText(big, 96, 700, "onSurface");
+        theme.styleText(big, Math.round(80 * scale), 700, "onSurface");
         big.setTextColor(Color.WHITE);
+        big.setIncludeFontPadding(false);
+        big.setMaxLines(1);
         LinearLayout.LayoutParams bigParams = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        bigParams.topMargin = theme.px(clock ? 24 : 0);
+        bigParams.topMargin = theme.px(clock ? Math.round(16 * scale) : 0);
         column.addView(big, bigParams);
         if (!shownHint.isEmpty()) {
             TextView small = new TextView(context);
             small.setText(shownHint);
             small.setGravity(Gravity.CENTER);
-            theme.styleText(small, 24, 400, "onSurface");
+            theme.styleText(small, Math.round(22 * scale), 400, "onSurface");
             small.setTextColor(0xB3FFFFFF);
+            small.setIncludeFontPadding(false);
             LinearLayout.LayoutParams smallParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            smallParams.topMargin = theme.px(20);
+            smallParams.topMargin = theme.px(Math.round(16 * scale));
             column.addView(small, smallParams);
         }
         root.addView(column, new FrameLayout.LayoutParams(
@@ -424,6 +432,16 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
             @Override public boolean onTouch(View view, MotionEvent event) {
                 if (event.getActionMasked() == MotionEvent.ACTION_UP) onTap();
                 return true;
+            }
+        });
+        // Report the measured layout once, so its fit on a screen can be checked in the KS log.
+        root.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+            @Override public void onLayoutChange(View v, int l, int t, int r, int b, int ol, int ot, int or, int ob) {
+                PluginHost current = host;
+                if (current != null && (b - t) != (ob - ot)) {
+                    current.log("snooze-screensaver layout screen=" + (b - t) + "px content=" + column.getHeight()
+                        + "px top=" + column.getTop() + " scale=" + scale);
+                }
             }
         });
         return root;
