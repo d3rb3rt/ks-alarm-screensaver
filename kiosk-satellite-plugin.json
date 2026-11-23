@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "alarm-tap",
   "name": "Alarm Tap",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "apiVersion": 1,
   "minAndroidSdk": 24,
   "minAppVersion": "2026.11.14",
@@ -136,6 +136,18 @@
       "description": "Spoken when a tap snoozes. {n} is the snooze count, {min} the total snooze time in minutes, {max} the limit. Empty means silence."
     },
     {
+      "key": "tapVolume",
+      "type": "number",
+      "title": "Volume of the snooze announcement",
+      "default": 50,
+      "min": 0,
+      "max": 100,
+      "step": 5,
+      "unit": "%",
+      "group": "Speech",
+      "description": "Sent to the speak service as the field volume (0 to 1). 0 sends no volume, for services that have none, such as tts.speak."
+    },
+    {
       "key": "stopText",
       "type": "string",
       "title": "Text on double tap",
@@ -144,12 +156,36 @@
       "description": "Spoken when a double tap stops the alarm."
     },
     {
+      "key": "stopVolume",
+      "type": "number",
+      "title": "Volume of the end of alarm announcement",
+      "default": 100,
+      "min": 0,
+      "max": 100,
+      "step": 5,
+      "unit": "%",
+      "group": "Speech",
+      "description": "Sent to the speak service as the field volume (0 to 1). 0 sends no volume, for services that have none, such as tts.speak."
+    },
+    {
       "key": "maxText",
       "type": "string",
       "title": "Text at the limit",
       "default": "Maximale Schlummeranzahl erreicht",
       "group": "Speech",
       "description": "Spoken when a tap is refused because the maximum is reached."
+    },
+    {
+      "key": "maxVolume",
+      "type": "number",
+      "title": "Volume of the limit announcement",
+      "default": 100,
+      "min": 0,
+      "max": 100,
+      "step": 5,
+      "unit": "%",
+      "group": "Speech",
+      "description": "Sent to the speak service as the field volume (0 to 1). 0 sends no volume, for services that have none, such as tts.speak."
     }
   ]
 }

@@ -21,6 +21,7 @@ A Kiosk Satellite plugin. While an alarm rings, a tap anywhere on the screen run
 | Show the time | Current time above the label |
 | Tap action | Runs on a single tap, for example snooze |
 | Speak service / Extra service data | Home Assistant service that speaks and the fields it needs besides the text |
+| Volume per text | Percent, sent as the field `volume`; 0 sends none |
 | Text on tap / double tap / at the limit | Spoken texts, `{n}` = snooze count, `{max}` = limit |
 | Double tap action | Runs on a double tap, for example stop |
 | Snooze length | Length of one snooze as set in KS, for `{min}` |

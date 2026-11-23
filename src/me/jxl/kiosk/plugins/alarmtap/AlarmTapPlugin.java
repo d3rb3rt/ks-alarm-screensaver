@@ -46,6 +46,9 @@ public final class AlarmTapPlugin implements KioskPlugin {
     private int count;
     private volatile int maxSnooze;
     private volatile int snoozeMinutes = 5;
+    private volatile int tapVolume = 50;
+    private volatile int stopVolume = 100;
+    private volatile int maxVolume = 100;
     private volatile long resetMs = 30L * 60000L;
     private long lastSnooze;
     private volatile String sayService = "";
@@ -81,6 +84,9 @@ public final class AlarmTapPlugin implements KioskPlugin {
         String next = entityId(settings.get("ringing"));
         Object max = settings.get("maxSnooze");
         maxSnooze = max instanceof Number ? Math.max(0, ((Number) max).intValue()) : 0;
+        tapVolume = percent(settings.get("tapVolume"), 50);
+        stopVolume = percent(settings.get("stopVolume"), 100);
+        maxVolume = percent(settings.get("maxVolume"), 100);
         Object length = settings.get("snoozeMinutes");
         snoozeMinutes = length instanceof Number ? Math.max(0, ((Number) length).intValue()) : 5;
         Object reset = settings.get("resetMinutes");
@@ -100,6 +106,10 @@ public final class AlarmTapPlugin implements KioskPlugin {
             show();
         }
         host.status(entity.isEmpty() ? "Choose the alarm ringing entity in the settings." : "Watching " + entity, entity.isEmpty());
+    }
+
+    private static int percent(Object value, int fallback) {
+        return value instanceof Number ? Math.max(0, Math.min(100, ((Number) value).intValue())) : fallback;
     }
 
     private static String text(Object value) {
@@ -239,19 +249,19 @@ public final class AlarmTapPlugin implements KioskPlugin {
     /** Main thread. Tap: snooze and count, or at the limit only the limit action. */
     private void doSnooze() {
         if (maxSnooze > 0 && count >= maxSnooze) {
-            say(maxText);
+            say(maxText, maxVolume);
             return;
         }
         count++;
         lastSnooze = System.currentTimeMillis();
-        say(tapText);
+        say(tapText, tapVolume);
         run(TAP);
         refresh();
     }
 
     /** Main thread. Double tap: say, stop, and start counting from zero. */
     private void doStop() {
-        say(stopText);
+        say(stopText, stopVolume);
         run(DOUBLE_TAP);
         count = 0;
         lastSnooze = 0;
@@ -262,7 +272,7 @@ public final class AlarmTapPlugin implements KioskPlugin {
     }
 
     /** Speaks the text through the chosen Home Assistant service. {n} is the snooze count, {max} the limit. */
-    private void say(String template) {
+    private void say(String template, int volumePercent) {
         PluginHost current = host;
         if (current == null || template.isEmpty() || sayService.isEmpty()) return;
         int dot = sayService.indexOf('.');
@@ -284,6 +294,7 @@ public final class AlarmTapPlugin implements KioskPlugin {
             current.status("Speak data is not valid JSON: " + badJson.getMessage(), true);
             return;
         }
+        if (volumePercent > 0) data.put("volume", volumePercent / 100.0);
         data.put("message", template.replace("{n}", String.valueOf(count)).replace("{max}", String.valueOf(maxSnooze))
             .replace("{min}", String.valueOf(count * snoozeMinutes)));
         Map<String, Object> message = new HashMap<String, Object>();
