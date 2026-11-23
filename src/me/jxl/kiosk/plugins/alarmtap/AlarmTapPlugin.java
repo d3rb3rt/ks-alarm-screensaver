@@ -80,6 +80,7 @@ public final class AlarmTapPlugin implements KioskPlugin {
         host.log("alarm-tap started");
         configure(settings);
         host.subscribe("device.key");
+        loadServices(null);
     }
 
     @Override
@@ -112,7 +113,6 @@ public final class AlarmTapPlugin implements KioskPlugin {
         Object reset = settings.get("resetMinutes");
         resetMs = (reset instanceof Number ? Math.max(1, ((Number) reset).intValue()) : 30) * 60000L;
         sayService = text(settings.get("sayService"));
-        if (sayService.isEmpty() && detectedService.isEmpty()) detectService();
         sayData = text(settings.get("sayData"));
         tapText = text(settings.get("tapText"));
         stopText = text(settings.get("stopText"));
@@ -158,38 +158,83 @@ public final class AlarmTapPlugin implements KioskPlugin {
         return own.isEmpty() ? builtin(key, language) : own;
     }
 
-    /** Looks for the kiosk's own announce action (esphome.*_announce) and uses it when there is exactly one. */
-    private void detectService() {
+    static final String ESPHOME_DEFAULTS = "{\"url\": \"\", \"repeat\": 0, \"repeat_pause\": 0, \"chime\": false, "
+        + "\"chime_file\": \"\", \"tts_engine\": \"\", \"tts_language\": \"\", \"tts_voice\": \"\", \"audio_only\": true}";
+
+    /** A kiosk announce action of the ESPHome API: it takes the volume and the defaults above. */
+    static boolean isKioskAnnounce(String service) {
+        return service.startsWith("esphome.") && service.endsWith("_announce");
+    }
+
+    /**
+     * Reads the Home Assistant services that can speak, lists them as choices for Speak service and, while that
+     * setting is empty, uses the kiosk announce action when there is exactly one. run is the Refresh run or null.
+     */
+    private void loadServices(final String run) {
         final PluginHost current = host;
         if (current == null) return;
+        if (run != null) current.setupResult(run, "running", "Reading Home Assistant services");
         Map<String, Object> message = new HashMap<String, Object>();
         message.put("type", "get_services");
         try {
             current.haCall(message, new PluginHost.CommandCallback() {
                 @Override public void onResult(boolean ok, Object data, String error) {
                     if (!ok || !(data instanceof Map)) {
-                        current.status("Could not read the Home Assistant services: " + error, true);
+                        String why = "Could not read the Home Assistant services: " + error;
+                        if (run != null) current.setupResult(run, "error", why); else current.status(why, true);
                         return;
                     }
-                    Object esphome = ((Map<?, ?>) data).get("esphome");
-                    List<String> found = new ArrayList<String>();
-                    if (esphome instanceof Map) {
-                        for (Object name : ((Map<?, ?>) esphome).keySet()) {
-                            if (String.valueOf(name).endsWith("_announce")) found.add("esphome." + name);
-                        }
-                    }
-                    if (found.size() == 1) {
-                        detectedService = found.get(0);
-                        current.status("Speaking through " + detectedService, false);
-                    } else if (found.isEmpty()) {
-                        current.status("No announce action found. Enter a Speak service.", true);
-                    } else {
-                        current.status("Several kiosks found, enter one as Speak service: " + found, true);
-                    }
+                    listServices(current, (Map<?, ?>) data, run);
                 }
             });
         } catch (RuntimeException failure) {
-            current.status("Could not read the Home Assistant services: " + failure.getMessage(), true);
+            if (run != null) current.setupResult(run, "error", String.valueOf(failure.getMessage()));
+        }
+    }
+
+    private void listServices(PluginHost current, Map<?, ?> all, String run) {
+        List<Map<String, Object>> choices = new ArrayList<Map<String, Object>>();
+        List<String> announce = new ArrayList<String>();
+        for (Map.Entry<?, ?> domain : all.entrySet()) {
+            String d = String.valueOf(domain.getKey());
+            if (!(domain.getValue() instanceof Map)) continue;
+            for (Map.Entry<?, ?> service : ((Map<?, ?>) domain.getValue()).entrySet()) {
+                String id = d + "." + service.getKey();
+                String group;
+                if (isKioskAnnounce(id)) { group = "Kiosk announce"; announce.add(id); }
+                else if (d.equals("tts")) group = "Text to speech";
+                else if (id.equals("assist_satellite.announce")) group = "Assist satellites";
+                else continue;
+                Map<String, Object> choice = new HashMap<String, Object>();
+                choice.put("id", id);
+                Object name = service.getValue() instanceof Map ? ((Map<?, ?>) service.getValue()).get("name") : null;
+                String label = name instanceof String && !((String) name).isEmpty() ? (String) name : id;
+                choice.put("label", label.length() > 120 ? label.substring(0, 120) : label);
+                choice.put("detail", id.length() > 120 ? id.substring(0, 120) : id);
+                choice.put("group", group);
+                choices.add(choice);
+            }
+        }
+        java.util.Collections.sort(choices, new java.util.Comparator<Map<String, Object>>() {
+            @Override public int compare(Map<String, Object> x, Map<String, Object> y) {
+                int g = String.valueOf(x.get("group")).compareTo(String.valueOf(y.get("group")));
+                return g != 0 ? -g : String.valueOf(x.get("id")).compareTo(String.valueOf(y.get("id")));
+            }
+        });
+        try {
+            current.setSettingChoices("sayService", choices);
+        } catch (UnsupportedOperationException older) {
+            String[] ids = new String[choices.size()];
+            for (int i = 0; i < ids.length; i++) ids[i] = String.valueOf(choices.get(i).get("id"));
+            current.setSettingChoices("sayService", ids, null);
+        }
+        detectedService = announce.size() == 1 ? announce.get(0) : "";
+        String outcome = choices.size() + " services found";
+        if (run != null) current.setupResult(run, "success", outcome);
+        if (sayService.isEmpty()) {
+            if (announce.size() == 1) current.status("Speaking through " + detectedService, false);
+            else if (announce.isEmpty()) current.status("No kiosk announce action found. Pick a Speak service.", true);
+            else current.status("Several kiosks found. Pick this kiosk's announce action as Speak service.", true);
         }
     }
 
@@ -217,7 +262,14 @@ public final class AlarmTapPlugin implements KioskPlugin {
 
     @Override
     public synchronized void onEvent(String event, Map<String, Object> payload) {
-        if (host == null || entity.isEmpty()) return;
+        if (host == null) return;
+        if (event.equals("settings.choices") || event.equals("ks.settings.choices")) {
+            if ("sayService".equals(payload.get("key")) && payload.get("run") instanceof String) {
+                loadServices((String) payload.get("run"));
+            }
+            return;
+        }
+        if (entity.isEmpty()) return;
         if (event.equals("ks.device.key")) {
             onKey(payload);
         } else if (event.equals("ks.ha.entity." + entity)) {
@@ -414,8 +466,9 @@ public final class AlarmTapPlugin implements KioskPlugin {
         }
         Map<String, Object> data = new HashMap<String, Object>();
         try {
-            if (!sayData.isEmpty()) {
-                JSONObject extra = new JSONObject(sayData);
+            String extraData = sayData.isEmpty() && isKioskAnnounce(service) ? ESPHOME_DEFAULTS : sayData;
+            if (!extraData.isEmpty()) {
+                JSONObject extra = new JSONObject(extraData);
                 for (Iterator<String> keys = extra.keys(); keys.hasNext();) {
                     String key = keys.next();
                     Object value = extra.get(key);
@@ -426,7 +479,7 @@ public final class AlarmTapPlugin implements KioskPlugin {
             current.status("Speak data is not valid JSON: " + badJson.getMessage(), true);
             return;
         }
-        if (volumePercent > 0) data.put("volume", volumePercent / 100.0);
+        if (volumePercent > 0 && isKioskAnnounce(service)) data.put("volume", volumePercent / 100.0);
         data.put("message", template.replace("{n}", String.valueOf(count)).replace("{max}", String.valueOf(maxSnooze))
             .replace("{total}", String.valueOf(count * snoozeMinutes))
             .replace("{min}", String.valueOf(count * snoozeMinutes))

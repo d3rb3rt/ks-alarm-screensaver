@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "alarm-tap",
   "name": "Alarm Tap",
-  "version": "1.4.2",
+  "version": "1.5.0",
   "apiVersion": 1,
   "minAndroidSdk": 24,
   "minAppVersion": "2026.11.14",
@@ -158,15 +158,17 @@
       "title": "Speak service",
       "default": "",
       "group": "Speech",
-      "description": "Home Assistant service that speaks, as domain.service, for example tts.speak. Empty: the plugin looks for the kiosk's own announce action (esphome.<name>_announce) and uses it when there is exactly one. The status line says which one it found."
+      "description": "Home Assistant service that speaks: this kiosk's announce action, a text-to-speech service or an Assist satellite announcement. Not picked: the plugin uses the kiosk announce action when Home Assistant has exactly one.",
+      "choices": "plugin",
+      "emptyText": "Press Refresh to list the Home Assistant services that can speak."
     },
     {
       "key": "sayData",
       "type": "string",
       "title": "Extra service data (JSON)",
-      "default": "{\"url\": \"\", \"repeat\": 0, \"repeat_pause\": 0, \"chime\": false, \"chime_file\": \"\", \"tts_engine\": \"\", \"tts_language\": \"\", \"tts_voice\": \"\", \"audio_only\": true}",
+      "default": "",
       "group": "Speech",
-      "description": "Further fields the service needs besides the text, as JSON. The text is sent as \"message\", the volume from the volume settings. The default fits the kiosk's own announce action. Example for tts.speak: {\"entity_id\": \"tts.home_assistant_cloud\", \"media_player_entity_id\": \"media_player.clock\"}."
+      "description": "Further fields the service needs besides the text, as JSON. The text is sent as \"message\". Empty: for a kiosk announce action the plugin fills in its fields. For tts.speak enter for example {\"entity_id\": \"tts.google_translate_en_com\", \"media_player_entity_id\": \"media_player.clock\"}, for assist_satellite.announce {\"entity_id\": \"assist_satellite.clock\"}."
     },
     {
       "key": "tapText",
@@ -186,7 +188,7 @@
       "step": 5,
       "unit": "%",
       "group": "Speech",
-      "description": "Sent to the speak service as the field volume (0 to 1). 0 sends no volume, for services that have none, such as tts.speak."
+      "description": "Only for a kiosk announce action, sent as its volume (0 to 1). 0 sends none. Other services play at the speaker's volume."
     },
     {
       "key": "stopText",
@@ -206,7 +208,7 @@
       "step": 5,
       "unit": "%",
       "group": "Speech",
-      "description": "Sent to the speak service as the field volume (0 to 1). 0 sends no volume, for services that have none, such as tts.speak."
+      "description": "Only for a kiosk announce action, sent as its volume (0 to 1). 0 sends none. Other services play at the speaker's volume."
     },
     {
       "key": "maxText",
@@ -226,7 +228,7 @@
       "step": 5,
       "unit": "%",
       "group": "Speech",
-      "description": "Sent to the speak service as the field volume (0 to 1). 0 sends no volume, for services that have none, such as tts.speak."
+      "description": "Only for a kiosk announce action, sent as its volume (0 to 1). 0 sends none. Other services play at the speaker's volume."
     }
   ]
 }
