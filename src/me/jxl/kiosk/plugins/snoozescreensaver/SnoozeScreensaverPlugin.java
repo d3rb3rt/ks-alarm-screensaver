@@ -100,8 +100,10 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
     }
 
     @Override
-    public synchronized void configure(Map<String, Object> settings) {
+    public synchronized void configure(Map<String, Object> given) {
         if (host == null) return;
+        // A copy, because the default texts are filled in below and the host's map may be read only.
+        Map<String, Object> settings = new HashMap<String, Object>(given);
         Object ms = settings.get("doubleTapMs");
         windowMs = ms instanceof Number ? ((Number) ms).intValue() : 350;
         language = language(text(settings.get("language")));
