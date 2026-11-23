@@ -12,7 +12,10 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextClock;
 import android.widget.TextView;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
+import org.json.JSONObject;
 import java.util.regex.Pattern;
 import me.jxl.kiosk.plugins.KioskPlugin;
 import me.jxl.kiosk.plugins.KsTheme;
@@ -25,15 +28,13 @@ import me.jxl.kiosk.plugins.PluginHost;
  * the time, a big snooze label with the snooze count and a short hint. One tap runs the tap action, two
  * quick taps run the double tap action. The plugin counts the snoozes itself and, from a chosen maximum on,
  * runs a limit action instead of snoozing. It never decides what the actions do: the user picks them
- * (KS actions, Home Assistant services such as tts.speak, scripts) in the action settings.
+ * (KS actions, Home Assistant services, scripts) in the action settings. Spoken texts go through a Home
+ * Assistant service of your choice; {n} and {max} in them become the snooze count and the limit.
  */
 public final class AlarmTapPlugin implements KioskPlugin {
     static final String OVERLAY = "ring";
     static final String TAP = "tapAction";
     static final String DOUBLE_TAP = "doubleTapAction";
-    static final String TAP_SAY = "tapSayAction";
-    static final String DOUBLE_TAP_SAY = "doubleTapSayAction";
-    static final String MAX_ACTION = "maxAction";
     private static final Pattern ENTITY = Pattern.compile("[a-z0-9_]+\\.[a-z0-9_]+");
 
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -46,6 +47,11 @@ public final class AlarmTapPlugin implements KioskPlugin {
     private volatile int maxSnooze;
     private volatile long resetMs = 30L * 60000L;
     private long lastSnooze;
+    private volatile String sayService = "";
+    private volatile String sayData = "";
+    private volatile String tapText = "";
+    private volatile String stopText = "";
+    private volatile String maxText = "";
     private volatile int windowMs = 350;
     private boolean showing;
     /** Main thread only: the single tap that waits to see whether a second one follows. */
@@ -76,6 +82,11 @@ public final class AlarmTapPlugin implements KioskPlugin {
         maxSnooze = max instanceof Number ? Math.max(0, ((Number) max).intValue()) : 0;
         Object reset = settings.get("resetMinutes");
         resetMs = (reset instanceof Number ? Math.max(1, ((Number) reset).intValue()) : 30) * 60000L;
+        sayService = text(settings.get("sayService"));
+        sayData = text(settings.get("sayData"));
+        tapText = text(settings.get("tapText"));
+        stopText = text(settings.get("stopText"));
+        maxText = text(settings.get("maxText"));
         boolean changed = !next.equals(entity);
         if (changed) {
             if (!entity.isEmpty()) host.unsubscribe("ha.entity." + entity);
@@ -225,19 +236,19 @@ public final class AlarmTapPlugin implements KioskPlugin {
     /** Main thread. Tap: snooze and count, or at the limit only the limit action. */
     private void doSnooze() {
         if (maxSnooze > 0 && count >= maxSnooze) {
-            run(MAX_ACTION);
+            say(maxText);
             return;
         }
         count++;
         lastSnooze = System.currentTimeMillis();
-        run(TAP_SAY);
+        say(tapText);
         run(TAP);
         refresh();
     }
 
     /** Main thread. Double tap: say, stop, and start counting from zero. */
     private void doStop() {
-        run(DOUBLE_TAP_SAY);
+        say(stopText);
         run(DOUBLE_TAP);
         count = 0;
         lastSnooze = 0;
@@ -247,8 +258,45 @@ public final class AlarmTapPlugin implements KioskPlugin {
         if (showing && host != null) show();
     }
 
-    private static boolean isOptional(String setting) {
-        return setting.equals(TAP_SAY) || setting.equals(DOUBLE_TAP_SAY) || setting.equals(MAX_ACTION);
+    /** Speaks the text through the chosen Home Assistant service. {n} is the snooze count, {max} the limit. */
+    private void say(String template) {
+        PluginHost current = host;
+        if (current == null || template.isEmpty() || sayService.isEmpty()) return;
+        int dot = sayService.indexOf('.');
+        if (dot <= 0 || dot == sayService.length() - 1) {
+            current.status("Speak service must look like domain.service", true);
+            return;
+        }
+        Map<String, Object> data = new HashMap<String, Object>();
+        try {
+            if (!sayData.isEmpty()) {
+                JSONObject extra = new JSONObject(sayData);
+                for (Iterator<String> keys = extra.keys(); keys.hasNext();) {
+                    String key = keys.next();
+                    Object value = extra.get(key);
+                    if (value != JSONObject.NULL) data.put(key, value);
+                }
+            }
+        } catch (Exception badJson) {
+            current.status("Speak data is not valid JSON: " + badJson.getMessage(), true);
+            return;
+        }
+        data.put("message", template.replace("{n}", String.valueOf(count)).replace("{max}", String.valueOf(maxSnooze)));
+        Map<String, Object> message = new HashMap<String, Object>();
+        message.put("type", "call_service");
+        message.put("domain", sayService.substring(0, dot));
+        message.put("service", sayService.substring(dot + 1));
+        message.put("service_data", data);
+        final PluginHost report = current;
+        try {
+            current.haCall(message, new PluginHost.CommandCallback() {
+                @Override public void onResult(boolean ok, Object result, String error) {
+                    if (!ok) report.status("Speaking failed: " + error, true);
+                }
+            });
+        } catch (RuntimeException failure) {
+            current.status("Speaking failed: " + failure.getMessage(), true);
+        }
     }
 
     private void run(final String setting) {
@@ -257,7 +305,7 @@ public final class AlarmTapPlugin implements KioskPlugin {
         try {
             current.runAction(setting, new PluginHost.CommandCallback() {
                 @Override public void onResult(boolean ok, Object data, String error) {
-                    if (!ok && !isOptional(setting)) current.status(setting + ": " + error, true);
+                    if (!ok) current.status(setting + ": " + error, true);
                 }
             });
         } catch (RuntimeException failure) {
