@@ -9,6 +9,8 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextClock;
 import android.widget.TextView;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -19,9 +21,10 @@ import me.jxl.kiosk.plugins.OverlaySpec;
 import me.jxl.kiosk.plugins.PluginHost;
 
 /**
- * While the chosen entity says the alarm rings, a transparent full screen overlay takes every touch.
- * One tap runs the tap action, two quick taps run the double tap action. The plugin never decides what
- * the actions do: the user picks them in the action settings.
+ * While the chosen entity says the alarm rings, a black full screen overlay takes every touch and shows
+ * the time, a big snooze label with the snooze count and a short hint. One tap runs the tap action, two
+ * quick taps run the double tap action. The plugin never decides what the actions do: the user picks them
+ * in the action settings.
  */
 public final class AlarmTapPlugin implements KioskPlugin {
     static final String OVERLAY = "ring";
@@ -32,7 +35,11 @@ public final class AlarmTapPlugin implements KioskPlugin {
     private final Handler main = new Handler(Looper.getMainLooper());
     private volatile PluginHost host;
     private String entity = "";
+    private String counterEntity = "";
     private String hint = "";
+    private String label = "Snooze";
+    private boolean showClock = true;
+    private int count;
     private volatile int windowMs = 350;
     private boolean showing;
     /** Main thread only: the single tap that waits to see whether a second one follows. */
@@ -50,23 +57,43 @@ public final class AlarmTapPlugin implements KioskPlugin {
         if (host == null) return;
         Object ms = settings.get("doubleTapMs");
         windowMs = ms instanceof Number ? ((Number) ms).intValue() : 350;
-        Object text = settings.get("hint");
-        String nextHint = text instanceof String ? ((String) text).trim() : "";
-        Object value = settings.get("ringing");
-        String next = value instanceof String ? ((String) value).trim() : "";
-        if (!next.isEmpty() && !ENTITY.matcher(next).matches()) next = "";
-        boolean changed = !next.equals(entity);
-        boolean hintChanged = !nextHint.equals(hint);
+        String nextHint = text(settings.get("hint"));
+        String nextLabel = text(settings.get("snoozeLabel"));
+        boolean nextClock = !Boolean.FALSE.equals(settings.get("showClock"));
+        boolean textChanged = !nextHint.equals(hint) || !nextLabel.equals(label) || nextClock != showClock;
         hint = nextHint;
+        label = nextLabel;
+        showClock = nextClock;
+
+        String next = entityId(settings.get("ringing"));
+        String nextCounter = entityId(settings.get("counter"));
+        if (nextCounter.equals(next)) nextCounter = "";
+        boolean changed = !next.equals(entity);
+        boolean counterChanged = !nextCounter.equals(counterEntity);
+        if (counterChanged) {
+            if (!counterEntity.isEmpty()) host.unsubscribe("ha.entity." + counterEntity);
+            counterEntity = nextCounter;
+            count = 0;
+            if (!counterEntity.isEmpty()) host.subscribe("ha.entity." + counterEntity);
+        }
         if (changed) {
             if (!entity.isEmpty()) host.unsubscribe("ha.entity." + entity);
             entity = next;
             hide();
             if (!entity.isEmpty()) host.subscribe("ha.entity." + entity);
-        } else if (hintChanged && showing) {
+        } else if ((textChanged || counterChanged) && showing) {
             show();
         }
         host.status(entity.isEmpty() ? "Choose the alarm ringing entity in the settings." : "Watching " + entity, entity.isEmpty());
+    }
+
+    private static String text(Object value) {
+        return value instanceof String ? ((String) value).trim() : "";
+    }
+
+    private static String entityId(Object value) {
+        String id = text(value);
+        return ENTITY.matcher(id).matches() ? id : "";
     }
 
     @Override
@@ -75,16 +102,27 @@ public final class AlarmTapPlugin implements KioskPlugin {
     @Override
     public synchronized void onEvent(String event, Map<String, Object> payload) {
         if (host == null || entity.isEmpty()) return;
-        if (!event.equals("ks.ha.entity." + entity)) {
-            host.log("alarm-tap ignored event " + event);
-            return;
+        if (event.equals("ks.ha.entity." + entity)) {
+            boolean ringing = "on".equals(payload.get("state"));
+            host.log("alarm-tap event " + payload.get("state") + " showing=" + showing);
+            if (ringing == showing) return;
+            if (ringing) show(); else hide();
+        } else if (!counterEntity.isEmpty() && event.equals("ks.ha.entity." + counterEntity)) {
+            int next = parseCount(payload.get("state"));
+            host.log("alarm-tap counter " + next);
+            if (next == count) return;
+            count = next;
+            if (showing) show();
         }
-        boolean ringing = "on".equals(payload.get("state"));
-        host.status("Watching " + entity + " - last " + payload.get("state") + " at "
-            + new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(new java.util.Date()), false);
-        host.log("alarm-tap event " + payload.get("state") + " showing=" + showing);
-        if (ringing == showing) return;
-        if (ringing) show(); else hide();
+    }
+
+    private static int parseCount(Object state) {
+        if (!(state instanceof String)) return 0;
+        try {
+            return Math.max(0, (int) Math.round(Double.parseDouble(((String) state).trim())));
+        } catch (NumberFormatException notANumber) {
+            return 0;
+        }
     }
 
     @Override
@@ -93,6 +131,7 @@ public final class AlarmTapPlugin implements KioskPlugin {
         main.removeCallbacksAndMessages(null);
         host = null;
         entity = "";
+        counterEntity = "";
     }
 
     private void show() {
@@ -104,14 +143,14 @@ public final class AlarmTapPlugin implements KioskPlugin {
             // Older KS versions have no layers: the overlay then draws over the dashboard only.
         }
         final String shownHint = hint;
+        final String shownLabel = count > 0 ? label + " ×" + count : label;
+        final boolean shownClock = showClock;
         try {
             host.showOverlay(OVERLAY, spec, new OverlayFactory() {
                 @Override public View create(Context context, KsTheme theme) {
-                    host.log("alarm-tap overlay created");
-                    return build(context, theme, shownHint);
+                    return build(context, theme, shownClock, shownLabel, shownHint);
                 }
             });
-            host.log("alarm-tap overlay requested");
         } catch (RuntimeException failure) {
             host.log("alarm-tap overlay failed: " + failure);
             host.status("Overlay failed: " + failure.getMessage(), true);
@@ -129,20 +168,44 @@ public final class AlarmTapPlugin implements KioskPlugin {
         pendingTap = null;
     }
 
-    private View build(Context context, KsTheme theme, String shownHint) {
+    private View build(Context context, KsTheme theme, boolean clock, String title, String shownHint) {
         FrameLayout root = new FrameLayout(context);
-        root.setBackgroundColor(Color.TRANSPARENT);
-        if (!shownHint.isEmpty()) {
-            TextView label = new TextView(context);
-            label.setText(shownHint);
-            label.setBackground(theme.card());
-            label.setPadding(theme.px(20), theme.px(10), theme.px(20), theme.px(10));
-            theme.styleText(label, 14, 500, "onSurface");
-            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-            params.bottomMargin = theme.px(16);
-            root.addView(label, params);
+        root.setBackgroundColor(Color.BLACK);
+        LinearLayout column = new LinearLayout(context);
+        column.setOrientation(LinearLayout.VERTICAL);
+        column.setGravity(Gravity.CENTER_HORIZONTAL);
+        if (clock) {
+            TextClock time = new TextClock(context);
+            time.setFormat24Hour("HH:mm");
+            time.setFormat12Hour("HH:mm");
+            time.setGravity(Gravity.CENTER);
+            theme.styleText(time, 72, 300, "onSurface");
+            time.setTextColor(0xB3FFFFFF);
+            column.addView(time, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         }
+        TextView big = new TextView(context);
+        big.setText(title);
+        big.setGravity(Gravity.CENTER);
+        theme.styleText(big, 96, 700, "onSurface");
+        big.setTextColor(Color.WHITE);
+        LinearLayout.LayoutParams bigParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        bigParams.topMargin = theme.px(clock ? 24 : 0);
+        column.addView(big, bigParams);
+        if (!shownHint.isEmpty()) {
+            TextView small = new TextView(context);
+            small.setText(shownHint);
+            small.setGravity(Gravity.CENTER);
+            theme.styleText(small, 24, 400, "onSurface");
+            small.setTextColor(0xB3FFFFFF);
+            LinearLayout.LayoutParams smallParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            smallParams.topMargin = theme.px(20);
+            column.addView(small, smallParams);
+        }
+        root.addView(column, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
         root.setOnTouchListener(new View.OnTouchListener() {
             @Override public boolean onTouch(View view, MotionEvent event) {
                 if (event.getActionMasked() == MotionEvent.ACTION_UP) onTap();

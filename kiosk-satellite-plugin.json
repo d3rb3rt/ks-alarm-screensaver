@@ -2,15 +2,19 @@
   "schemaVersion": 1,
   "id": "alarm-tap",
   "name": "Alarm Tap",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "apiVersion": 1,
   "minAndroidSdk": 24,
   "minAppVersion": "2026.11.14",
   "entryClass": "me.jxl.kiosk.plugins.alarmtap.AlarmTapPlugin",
-  "description": "While an alarm rings, a tap anywhere on the screen runs one action (for example snooze) and a double tap runs another (for example stop). You choose the Home Assistant entity that tells when the alarm rings and the two actions.",
+  "description": "While an alarm rings, a black screen shows the time, a big snooze label with the snooze count and a hint. A tap anywhere runs one action (for example snooze) and a double tap runs another (for example stop). You choose the Home Assistant entity that tells when the alarm rings, an optional snooze counter and the two actions.",
   "author": "d3rb3rt",
   "license": "MIT",
-  "capabilities": ["overlay", "host.read", "ha"],
+  "capabilities": [
+    "overlay",
+    "host.read",
+    "ha"
+  ],
   "settings": [
     {
       "key": "ringing",
@@ -19,6 +23,30 @@
       "default": "",
       "group": "Alarm",
       "description": "A binary sensor that is on while the alarm rings, such as the kiosk's Alarm ringing sensor."
+    },
+    {
+      "key": "counter",
+      "type": "entity",
+      "title": "Snooze counter entity",
+      "default": "",
+      "group": "Alarm",
+      "description": "Optional counter whose value is shown after the snooze label, such as a counter helper that counts snoozes. Hidden while it is 0."
+    },
+    {
+      "key": "snoozeLabel",
+      "type": "string",
+      "title": "Snooze label",
+      "default": "Snooze",
+      "group": "Alarm",
+      "description": "The big text on the ringing screen."
+    },
+    {
+      "key": "showClock",
+      "type": "boolean",
+      "title": "Show the time",
+      "default": true,
+      "group": "Alarm",
+      "description": "Shows the current time above the snooze label."
     },
     {
       "key": "tapAction",
@@ -52,9 +80,9 @@
       "key": "hint",
       "type": "string",
       "title": "Hint text",
-      "default": "Tap: snooze · Double tap: stop",
+      "default": "Double tap: end alarm",
       "group": "Alarm",
-      "description": "Shown at the bottom while the alarm rings. Leave empty for no hint."
+      "description": "Shown below the snooze label while the alarm rings. Leave empty for no hint."
     }
   ]
 }

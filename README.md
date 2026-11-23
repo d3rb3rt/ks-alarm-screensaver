@@ -5,7 +5,7 @@ A Kiosk Satellite plugin. While an alarm rings, a tap anywhere on the screen run
 ## How it works
 
 - You choose a Home Assistant entity that is `on` while the alarm rings, such as the kiosk's **Alarm ringing** binary sensor.
-- While it is `on`, the plugin lays a transparent full screen overlay over everything, including the alarm screen. It takes every touch.
+- While it is `on`, the plugin shows a black full screen overlay with the time, a big snooze label with the snooze count and a short hint. It takes every touch. It draws over the screensaver, the menu and the camera views. KS draws its own alarm screen above all plugin overlays, so the plugin works when a screensaver shows the ring (the **Let alarms take over** option of the Clock and Weather Mood screensavers).
 - One tap runs the **Tap action** after a short wait. Two quick taps run the **Double tap action** instead.
 - Both are Kiosk Satellite action settings, so you pick anything the Gestures page offers, such as a Home Assistant script. The plugin does not know what they do.
 - When the entity turns `off`, the overlay goes away.
@@ -15,10 +15,13 @@ A Kiosk Satellite plugin. While an alarm rings, a tap anywhere on the screen run
 | Setting | Meaning |
 | --- | --- |
 | Alarm ringing entity | Binary sensor that is `on` while the alarm rings |
+| Snooze counter entity | Optional counter, its value is shown after the label and hidden at 0 |
+| Snooze label | The big text, default Snooze |
+| Show the time | Current time above the label |
 | Tap action | Runs on a single tap |
 | Double tap action | Runs on a double tap |
 | Double tap window | How long a single tap waits for a second one, 200 to 600 ms |
-| Hint text | Shown at the bottom while ringing, empty for none |
+| Hint text | Shown below the label, empty for none |
 
 A single tap runs after the double tap window, so a shorter window makes snoozing feel quicker.
 
@@ -35,7 +38,7 @@ python3 tools/test.py
 python3 tools/build.py
 ```
 
-Releases are built by the GitHub Actions workflow when a tag like `v1.0.1` is pushed. The tag must match the version in the manifest, and the workflow creates the release.
+Releases are built by the GitHub Actions workflow on every push to `main`. If the version in the manifest has no release yet, the workflow builds the plugin, tags the commit `v<version>` and creates the release. Bump the version to release again.
 
 ## License
 

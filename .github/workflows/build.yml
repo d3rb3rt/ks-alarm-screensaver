@@ -1,48 +1,61 @@
 name: Release
 on:
   push:
-    tags: ['v*']
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: write
+concurrency:
+  group: release
+  cancel-in-progress: false
 jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Validate release
+      - name: Read the manifest version
+        id: ver
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 - <<'PY'
-          import json
-          import os
-
-          if os.environ['GITHUB_REF_TYPE'] != 'tag':
-              raise SystemExit('Run this workflow on a release tag, not a branch.')
-          version = json.load(open('kiosk-satellite-plugin.json'))['version']
-          if os.environ['GITHUB_REF_NAME'] != 'v' + version:
-              raise SystemExit('Tag %s does not match manifest version %s.' % (os.environ['GITHUB_REF_NAME'], version))
-          PY
+          version=$(python3 -c "import json; print(json.load(open('kiosk-satellite-plugin.json'))['version'])")
+          tag="v$version"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          assets=$(gh release view "$tag" --json assets --jq '.assets | length' 2>/dev/null || echo none)
+          if [ "$assets" != "none" ] && [ "$assets" != "0" ]; then
+            echo "Release $tag already has files: nothing to do. Bump the version in the manifest to release again."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/setup-java@v4
+        if: steps.ver.outputs.skip != 'true'
         with:
           distribution: temurin
           java-version: '21'
       - name: Set up Android SDK
+        if: steps.ver.outputs.skip != 'true'
         uses: android-actions/setup-android@v4
       - name: Install Android build tools
+        if: steps.ver.outputs.skip != 'true'
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
       - name: Test
+        if: steps.ver.outputs.skip != 'true'
         run: python3 tools/test.py
       - name: Build
-        run: python3 tools/build.py --android-platform 35 --version "${GITHUB_REF_NAME#v}"
+        if: steps.ver.outputs.skip != 'true'
+        run: python3 tools/build.py --android-platform 35 --version "${TAG#v}"
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
       - name: Create the release and attach plugin assets
+        if: steps.ver.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.ver.outputs.tag }}
         run: |
-          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
-            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
-          gh release upload "$GITHUB_REF_NAME" \
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --generate-notes
+          gh release upload "$TAG" \
             dist/*.zip \
             dist/*.zip.sha256 \
             dist/kiosk-satellite-plugin.json --clobber
