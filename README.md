@@ -24,7 +24,7 @@ A single tap runs after the double tap window, so a shorter window makes snoozin
 
 ## Requirements
 
-Kiosk Satellite 2026.11.14 or newer. The plugin needs the `overlay` and `host.read` capabilities and no Home Assistant access of its own.
+Kiosk Satellite 2026.11.14 or newer. The plugin needs the `overlay`, `host.read` and `ha` capabilities. `ha` is only used to watch the one entity you pick; the plugin sends no commands to Home Assistant itself.
 
 ## Build
 
