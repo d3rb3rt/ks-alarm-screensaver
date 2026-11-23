@@ -105,6 +105,7 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         Object ms = settings.get("doubleTapMs");
         windowMs = ms instanceof Number ? ((Number) ms).intValue() : 350;
         language = language(text(settings.get("language")));
+        fillDefaults(settings);
         String nextHint = pick(text(settings.get("hint")), "hint");
         String nextLabel = pick(text(settings.get("snoozeLabel")), "label");
         if (nextLabel.isEmpty()) nextLabel = builtin("label", language);
@@ -168,7 +169,35 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         }
     }
 
-    /** Empty: the built-in text in the chosen language. A single dash: nothing. Anything else: as typed. */
+    /** Setting key and its default text key. */
+    static final String[][] TEXTS = {
+        {"snoozeLabel", "label"}, {"hint", "hint"}, {"tapText", "tap"}, {"stopText", "stop"}, {"lastText", "last"},
+    };
+
+    /**
+     * Shows the default texts in the settings: an empty field, or one that still holds the default of the other
+     * language, gets the default of the chosen language. Text the user typed, or "-", stays as it is.
+     */
+    private void fillDefaults(Map<String, Object> settings) {
+        String other = language.equals("de") ? "en" : "de";
+        Map<String, Object> change = new HashMap<String, Object>();
+        for (String[] text : TEXTS) {
+            String value = text(settings.get(text[0]));
+            String wanted = builtin(text[1], language);
+            if (!value.equals(wanted) && (value.isEmpty() || value.equals(builtin(text[1], other)))) {
+                change.put(text[0], wanted);
+                settings.put(text[0], wanted);
+            }
+        }
+        if (change.isEmpty()) return;
+        try {
+            host.updateSettings(change);
+        } catch (RuntimeException failure) {
+            host.log("snooze-screensaver: could not fill in the default texts: " + failure);
+        }
+    }
+
+    /** Empty: the default text in the chosen language. A single dash: nothing. Anything else: as typed. */
     private String pick(String own, String key) {
         if (own.equals("-")) return "";
         return own.isEmpty() ? builtin(key, language) : own;

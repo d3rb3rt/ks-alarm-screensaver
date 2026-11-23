@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "snooze-screensaver",
   "name": "Snooze Screensaver",
-  "version": "3.1.2",
+  "version": "3.2.0",
   "apiVersion": 1,
   "minAndroidSdk": 24,
   "minAppVersion": "2026.11.30",
@@ -24,7 +24,7 @@
       "title": "Snooze label",
       "default": "",
       "group": "Alarm",
-      "description": "Default: Snooze (Deutsch: Schlummern). Overwrite it with your own text."
+      "description": "The big text on the ringing screen."
     },
     {
       "key": "showClock",
@@ -91,7 +91,7 @@
       "title": "Hint text",
       "default": "",
       "group": "Alarm",
-      "description": "Default: Double tap: end alarm (Deutsch: Doppeltippen: Wecker beenden). Overwrite it with your own text, - shows none."
+      "description": "Shown below the label while the alarm rings. - shows none."
     },
     {
       "key": "language",
@@ -104,7 +104,7 @@
         "Deutsch"
       ],
       "group": "Speech",
-      "description": "Language of the default texts. Auto follows the device (German or English, otherwise English). Texts you type are used as they are."
+      "description": "Language of the default texts. Auto follows the device (German or English, otherwise English). Fields that still hold a default text switch with it; your own texts stay."
     },
     {
       "key": "speechSource",
@@ -140,7 +140,7 @@
       "title": "Text on snooze (tap)",
       "default": "",
       "group": "Speech",
-      "description": "Said after a snooze. Default: Snooze {n}, {total} minutes (Deutsch: Schlummer {n}, {total} Minuten). Overwrite it, - for silence. Placeholders: {n} this snooze, {total} minutes so far, {length} one snooze, {max} the limit."
+      "description": "Said after a snooze. - for silence. Placeholders: {n} this snooze, {total} minutes so far, {length} one snooze, {max} the limit."
     },
     {
       "key": "tapVolume",
@@ -160,7 +160,7 @@
       "title": "Text on stop (double tap)",
       "default": "",
       "group": "Speech",
-      "description": "Said after the plugin stops the alarm. Default: Alarm stopped (Deutsch: Wecker beendet). Overwrite it, - for silence. Placeholders: {n} this snooze, {total} minutes so far, {length} one snooze, {max} the limit."
+      "description": "Said after the plugin stops the alarm. - for silence. Placeholders: {n} this snooze, {total} minutes so far, {length} one snooze, {max} the limit."
     },
     {
       "key": "stopVolume",
@@ -180,7 +180,7 @@
       "title": "Text on last snooze",
       "default": "",
       "group": "Speech",
-      "description": "Said on the last allowed snooze. Default: Last snooze, {total} minutes (Deutsch: Letzter Schlummer, {total} Minuten). Overwrite it, - for silence. Placeholders: {n} this snooze, {total} minutes so far, {length} one snooze, {max} the limit."
+      "description": "Said on the last allowed snooze. - for silence. Placeholders: {n} this snooze, {total} minutes so far, {length} one snooze, {max} the limit."
     },
     {
       "key": "lastVolume",
