@@ -5,7 +5,7 @@ A Kiosk Satellite plugin. While an alarm rings, a tap anywhere on the screen run
 ## How it works
 
 - You choose a Home Assistant entity that is `on` while the alarm rings, such as the kiosk's **Alarm ringing** binary sensor.
-- While it is `on`, the plugin shows a black full screen overlay with the time, a big snooze label with the snooze count and a short hint. It takes every touch. It draws over the screensaver, the menu and the camera views. KS draws its own alarm screen above all plugin overlays, so the plugin works when a screensaver shows the ring (the **Let alarms take over** option of the Clock and Weather Mood screensavers).
+- While it is `on`, the plugin shows a black full screen overlay with the time, a big snooze label with the snooze count and a short hint. It takes every touch. It draws over the screensaver, the menu and the camera views. KS draws its own alarm screen above all plugin overlays, so the plugin needs a screensaver that shows the ring: the Clock or Weather Mood screensaver with **Let alarms take over** turned on. If an alarm rings without it, the plugin says so on its settings page.
 - One tap runs the **Tap action** after a short wait. Two quick taps run the **Double tap action** instead.
 - Both are Kiosk Satellite action settings, so you pick anything the Gestures page offers, such as the KS actions for snooze and stop, a Home Assistant service or a script. The plugin does not know what they do.
 - The plugin counts the snoozes itself. With **Maximum snoozes** set, a tap that would exceed it speaks the limit text instead of snoozing, so the alarm keeps ringing. A double tap stops the alarm and resets the count. The count also starts again when the alarm rings after a long pause.

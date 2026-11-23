@@ -2,12 +2,12 @@
   "schemaVersion": 1,
   "id": "alarm-tap",
   "name": "Alarm Tap",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "apiVersion": 1,
   "minAndroidSdk": 24,
   "minAppVersion": "2026.11.14",
   "entryClass": "me.jxl.kiosk.plugins.alarmtap.AlarmTapPlugin",
-  "description": "While an alarm rings, a black screen shows the time, a big snooze label with the snooze count and a hint. A tap or a hardware key runs one action (for example snooze), a double tap or a second key press another (for example stop). The plugin counts the snoozes, can limit them and can speak a text for each step, with the snooze count in it.",
+  "description": "While an alarm rings, a black screen shows the time, the snooze count and a hint. A tap or a hardware key snoozes, a double tap or a second key press stops. Counts and limits snoozes and can speak a text for each step. Needs the Clock or Weather Mood screensaver with Let alarms take over: KS's own alarm screen covers plugin overlays.",
   "author": "d3rb3rt",
   "license": "MIT",
   "capabilities": [
@@ -66,7 +66,7 @@
       "step": 1,
       "unit": "min",
       "group": "Alarm",
-      "description": "Length of one snooze as set in Kiosk Satellite. Used for {total} and {length} in the texts and to know how long the alarm stays snoozed."
+      "description": "One snooze as set in KS. Used for {total} and {length} and to know how long the alarm stays snoozed."
     },
     {
       "key": "maxSnooze",
@@ -109,7 +109,7 @@
       "title": "Snooze keys",
       "default": "VOLUME_UP,VOLUME_DOWN",
       "group": "Keys",
-      "description": "Keys that snooze while the alarm rings, comma-separated Android key names without KEYCODE_. A key listed here and under Stop keys snoozes on the first press and stops on a second press within the window. Empty means no key snoozes."
+      "description": "Keys that snooze while the alarm rings (Android names without KEYCODE_, comma-separated). A key also listed under Stop keys stops on a quick second press. Empty: no key snoozes."
     },
     {
       "key": "stopKeys",
@@ -117,7 +117,7 @@
       "title": "Stop keys",
       "default": "VOLUME_UP,VOLUME_DOWN",
       "group": "Keys",
-      "description": "Keys that stop the alarm, also while it is snoozed. A key that is only a stop key stops on the first press. Empty means no key stops. Turn on Kiosk Satellite's option to swallow the volume keys if they should not change the volume."
+      "description": "Keys that stop the alarm, also while it is snoozed. Empty: no key stops. Turn on KS's option to swallow the volume keys if they should not change the volume."
     },
     {
       "key": "keyWindowMs",
@@ -129,7 +129,7 @@
       "step": 50,
       "unit": "ms",
       "group": "Keys",
-      "description": "For a key that both snoozes and stops: a second press within this time stops the alarm. For a snooze-only key, a second press within this time is ignored."
+      "description": "A second press of a snooze and stop key within this time stops the alarm. A snooze-only key ignores it."
     },
     {
       "key": "hint",
@@ -150,7 +150,7 @@
         "Deutsch"
       ],
       "group": "Speech",
-      "description": "Language of the built-in texts on screen and in speech. Auto follows the device language (German or English, otherwise English). Texts you type are used as they are."
+      "description": "Language of the built-in texts. Auto follows the device (German or English, otherwise English). Texts you type are used as they are."
     },
     {
       "key": "sayService",
@@ -158,7 +158,7 @@
       "title": "Speak service",
       "default": "",
       "group": "Speech",
-      "description": "Home Assistant action that speaks, written as domain.action. Empty means no speech. To find this kiosk's own announce action: in Home Assistant open Developer tools > Actions, type announce and pick the entry named after this kiosk, for example esphome.bedroom_clock_announce, then copy the name shown under it. Other choices: tts.speak or assist_satellite.announce, with their fields under Extra service data."
+      "description": "Action that speaks, as domain.action. Empty: no speech. This kiosk's own: Developer tools > Actions in Home Assistant, type announce, take the name of this kiosk's entry, e.g. esphome.bedroom_clock_announce. See the README."
     },
     {
       "key": "sayData",
@@ -166,7 +166,7 @@
       "title": "Extra service data (JSON)",
       "default": "",
       "group": "Speech",
-      "description": "Further fields the service needs besides the text, as JSON. The text is sent as \"message\". Empty: for a kiosk announce action the plugin fills in its fields. For tts.speak enter for example {\"entity_id\": \"tts.google_translate_en_com\", \"media_player_entity_id\": \"media_player.clock\"}, for assist_satellite.announce {\"entity_id\": \"assist_satellite.clock\"}."
+      "description": "More fields for the action, as JSON; the text goes as \"message\". Empty fits the kiosk announce action. For tts.speak e.g. {\"entity_id\": \"tts.x\", \"media_player_entity_id\": \"media_player.y\"}."
     },
     {
       "key": "tapText",
@@ -174,7 +174,7 @@
       "title": "Text on tap",
       "default": "",
       "group": "Speech",
-      "description": "Spoken when a tap or key snoozes. Empty: the built-in text in the chosen language. A single - means silence. Placeholders: {n} = number of this snooze, {total} = total snooze minutes so far ({n} × Snooze length), {length} = minutes of one snooze, {max} = Maximum snoozes."
+      "description": "Spoken on snooze. Empty: built-in text. - : silence. Placeholders: {n} this snooze, {total} snooze minutes so far, {length} one snooze, {max} the limit."
     },
     {
       "key": "tapVolume",
@@ -194,7 +194,7 @@
       "title": "Text on double tap",
       "default": "",
       "group": "Speech",
-      "description": "Spoken when the alarm is stopped. Empty: the built-in text in the chosen language. A single - means silence. Placeholders: {n} = number of this snooze, {total} = total snooze minutes so far ({n} × Snooze length), {length} = minutes of one snooze, {max} = Maximum snoozes."
+      "description": "Spoken when the alarm stops. Empty: built-in text. - : silence. Placeholders: {n} this snooze, {total} snooze minutes so far, {length} one snooze, {max} the limit."
     },
     {
       "key": "stopVolume",
@@ -214,7 +214,7 @@
       "title": "Text at the limit",
       "default": "",
       "group": "Speech",
-      "description": "Spoken when a snooze is refused because the maximum is reached. Empty: the built-in text in the chosen language. A single - means silence. Placeholders: {n} = number of this snooze, {total} = total snooze minutes so far ({n} × Snooze length), {length} = minutes of one snooze, {max} = Maximum snoozes."
+      "description": "Spoken when the maximum is reached. Empty: built-in text. - : silence. Placeholders: {n} this snooze, {total} snooze minutes so far, {length} one snooze, {max} the limit."
     },
     {
       "key": "maxVolume",
