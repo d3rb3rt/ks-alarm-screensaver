@@ -2,19 +2,20 @@
   "schemaVersion": 1,
   "id": "snooze-screensaver",
   "name": "Snooze Screensaver",
-  "version": "3.0.1",
+  "version": "3.1.0",
   "apiVersion": 1,
   "minAndroidSdk": 24,
   "minAppVersion": "2026.11.30",
   "entryClass": "me.jxl.kiosk.plugins.snoozescreensaver.SnoozeScreensaverPlugin",
-  "description": "While an alarm rings, a black screen shows the time, the snooze count and a hint. A tap or a hardware key snoozes, a double tap or a second key press stops. Counts and limits snoozes and says a short text after each step. Works without Home Assistant (speech uses KS's alarm voice). Needs the Clock or Weather Mood screensaver with Let alarms take over: KS's own alarm screen covers plugin overlays.",
+  "description": "While an alarm rings, a black screen shows the time, the snooze count and a hint. A tap or a hardware key snoozes, a double tap or a second key press stops. Counts and limits snoozes and says a short text after each step. Works without Home Assistant; speech uses KS's alarm voice or, with its own volume, a Home Assistant action. Needs the Clock or Weather Mood screensaver with Let alarms take over: KS's own alarm screen covers plugin overlays.",
   "author": "d3rb3rt",
   "license": "MIT",
   "capabilities": [
     "overlay",
     "host.read",
     "host.control",
-    "entities"
+    "entities",
+    "ha"
   ],
   "settings": [
     {
@@ -106,12 +107,52 @@
       "description": "Language of the built-in texts. Auto follows the device (German or English, otherwise English). Texts you type are used as they are."
     },
     {
+      "key": "speechSource",
+      "type": "select",
+      "title": "Speech through",
+      "default": "KS alarm voice",
+      "options": [
+        "KS alarm voice",
+        "Home Assistant"
+      ],
+      "group": "Speech",
+      "description": "KS alarm voice speaks at the alarm volume. Home Assistant uses the action below with its own volume per text, until KS offers a volume for alarm speech."
+    },
+    {
+      "key": "sayService",
+      "type": "string",
+      "title": "Home Assistant speak action",
+      "default": "",
+      "group": "Speech",
+      "description": "As domain.action, e.g. this kiosk's esphome.<name>_announce (Developer tools > Actions, type announce). Only with Speech through Home Assistant."
+    },
+    {
+      "key": "sayData",
+      "type": "string",
+      "title": "Extra action data (JSON)",
+      "default": "",
+      "group": "Speech",
+      "description": "More fields for the action; the text goes as \"message\". Empty fits a kiosk announce action."
+    },
+    {
       "key": "tapText",
       "type": "string",
       "title": "Text on tap",
       "default": "",
       "group": "Speech",
       "description": "Said after a snooze, in KS's alarm voice and volume (Settings > Alarms). Empty: built-in text. - : silence. Placeholders: {n} this snooze, {total} snooze minutes so far, {length} one snooze, {max} the limit."
+    },
+    {
+      "key": "tapVolume",
+      "type": "number",
+      "title": "Volume of this text",
+      "default": 30,
+      "min": 0,
+      "max": 100,
+      "step": 5,
+      "unit": "%",
+      "group": "Speech",
+      "description": "Only with Speech through Home Assistant and a kiosk announce action, sent as its volume. 0 sends none."
     },
     {
       "key": "stopText",
@@ -122,12 +163,36 @@
       "description": "Said after the plugin stops the alarm. Empty: built-in text. - : silence. Placeholders: {n} this snooze, {total} snooze minutes so far, {length} one snooze, {max} the limit."
     },
     {
+      "key": "stopVolume",
+      "type": "number",
+      "title": "Volume of this text",
+      "default": 60,
+      "min": 0,
+      "max": 100,
+      "step": 5,
+      "unit": "%",
+      "group": "Speech",
+      "description": "Only with Speech through Home Assistant and a kiosk announce action, sent as its volume. 0 sends none."
+    },
+    {
       "key": "lastText",
       "type": "string",
       "title": "Text on last snooze",
       "default": "",
       "group": "Speech",
       "description": "Said instead of the snooze text on the last allowed snooze. Empty: built-in text. - : silence. Placeholders: {n} this snooze, {total} snooze minutes so far, {length} one snooze, {max} the limit."
+    },
+    {
+      "key": "lastVolume",
+      "type": "number",
+      "title": "Volume of this text",
+      "default": 60,
+      "min": 0,
+      "max": 100,
+      "step": 5,
+      "unit": "%",
+      "group": "Speech",
+      "description": "Only with Speech through Home Assistant and a kiosk announce action, sent as its volume. 0 sends none."
     }
   ]
 }

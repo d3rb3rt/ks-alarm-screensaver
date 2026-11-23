@@ -18,6 +18,8 @@ import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.Iterator;
+import org.json.JSONObject;
 import me.jxl.kiosk.plugins.KioskPlugin;
 import me.jxl.kiosk.plugins.KsTheme;
 import me.jxl.kiosk.plugins.OverlayFactory;
@@ -63,6 +65,13 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
     private volatile String tapText = "";
     private volatile String stopText = "";
     private volatile String lastText = "";
+    /** True: speak through a Home Assistant action with its own volume instead of KS's alarm voice. */
+    private volatile boolean speakViaHa;
+    private volatile String sayService = "";
+    private volatile String sayData = "";
+    private volatile int tapVolume = 30;
+    private volatile int stopVolume = 60;
+    private volatile int lastVolume = 60;
 
     private volatile boolean showing;
     /** Main thread only: the single tap that waits to see whether a second one follows. */
@@ -116,9 +125,27 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         tapText = text(settings.get("tapText"));
         stopText = text(settings.get("stopText"));
         lastText = text(settings.get("lastText"));
+        speakViaHa = "Home Assistant".equals(text(settings.get("speechSource")));
+        sayService = text(settings.get("sayService"));
+        sayData = text(settings.get("sayData"));
+        tapVolume = percent(settings.get("tapVolume"), 30);
+        stopVolume = percent(settings.get("stopVolume"), 60);
+        lastVolume = percent(settings.get("lastVolume"), 60);
         if ((textChanged || maxChanged) && showing) refresh();
         // Shown in red on purpose: the plugin cannot read whether the screensaver takes over alarms.
         host.status(REQUIREMENT, true);
+    }
+
+    private static int percent(Object value, int fallback) {
+        return value instanceof Number ? Math.max(0, Math.min(100, ((Number) value).intValue())) : fallback;
+    }
+
+    static final String ESPHOME_DEFAULTS = "{\"url\": \"\", \"repeat\": 0, \"repeat_pause\": 0, \"chime\": false, "
+        + "\"chime_file\": \"\", \"tts_engine\": \"\", \"tts_language\": \"\", \"tts_voice\": \"\", \"audio_only\": true}";
+
+    /** A kiosk announce action of the ESPHome API: it takes the volume and the defaults above. */
+    static boolean isKioskAnnounce(String service) {
+        return service.startsWith("esphome.") && service.endsWith("_announce");
     }
 
     /** "Auto" follows the device language; German and English are built in, everything else is English. */
@@ -201,10 +228,10 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
             long now = System.currentTimeMillis();
             if (nextUntil > now) snoozeMinutes = (int) Math.max(1, Math.round((nextUntil - now) / 60000.0));
             boolean last = maxSnooze > 0 && count >= maxSnooze;
-            say(last ? pick(lastText, "last") : pick(tapText, "tap"));
+            say(last ? pick(lastText, "last") : pick(tapText, "tap"), last ? lastVolume : tapVolume);
         }
         if ("idle".equals(nextPhase)) {
-            if (live && stopRequested && !"idle".equals(previous)) say(pick(stopText, "stop"));
+            if (live && stopRequested && !"idle".equals(previous)) say(pick(stopText, "stop"), stopVolume);
             stopRequested = false;
             count = 0;
             ringAt = "";
@@ -259,8 +286,11 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         }
     }
 
-    /** Speaks with the alarm's voice and volume. {n} snooze count, {total} minutes so far, {length}, {max}. */
-    private void say(String template) {
+    /**
+     * Speaks the text: with KS's alarm voice at the alarm volume, or through the chosen Home Assistant action at
+     * its own volume. {n} snooze count, {total} minutes so far, {length} one snooze, {max} the limit.
+     */
+    private void say(String template, int volumePercent) {
         if (template.isEmpty()) return;
         int length = snoozeMinutes;
         String words = template.replace("{n}", String.valueOf(count))
@@ -269,7 +299,53 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
             .replace("{length}", String.valueOf(length))
             .replace("{max}", String.valueOf(maxSnooze));
         if (words.length() > 250) words = words.substring(0, 250);
-        command("sayAlarm", Collections.<String, Object>singletonMap("text", words));
+        if (speakViaHa && !sayService.isEmpty()) {
+            sayViaHa(words, volumePercent);
+        } else {
+            command("sayAlarm", Collections.<String, Object>singletonMap("text", words));
+        }
+    }
+
+    private void sayViaHa(String words, int volumePercent) {
+        final PluginHost current = host;
+        if (current == null) return;
+        final String service = sayService;
+        int dot = service.indexOf('.');
+        if (dot <= 0 || dot == service.length() - 1) {
+            current.log("snooze-screensaver: speak service must look like domain.action");
+            return;
+        }
+        Map<String, Object> data = new HashMap<String, Object>();
+        try {
+            String extraData = sayData.isEmpty() && isKioskAnnounce(service) ? ESPHOME_DEFAULTS : sayData;
+            if (!extraData.isEmpty()) {
+                JSONObject extra = new JSONObject(extraData);
+                for (Iterator<String> keys = extra.keys(); keys.hasNext();) {
+                    String key = keys.next();
+                    Object value = extra.get(key);
+                    if (value != JSONObject.NULL) data.put(key, value);
+                }
+            }
+        } catch (Exception badJson) {
+            current.log("snooze-screensaver: speak data is not valid JSON: " + badJson.getMessage());
+            return;
+        }
+        if (volumePercent > 0 && isKioskAnnounce(service)) data.put("volume", volumePercent / 100.0);
+        data.put("message", words);
+        Map<String, Object> message = new HashMap<String, Object>();
+        message.put("type", "call_service");
+        message.put("domain", service.substring(0, dot));
+        message.put("service", service.substring(dot + 1));
+        message.put("service_data", data);
+        try {
+            current.haCall(message, new PluginHost.CommandCallback() {
+                @Override public void onResult(boolean ok, Object result, String error) {
+                    if (!ok) current.log("snooze-screensaver: speaking failed: " + error);
+                }
+            });
+        } catch (RuntimeException failure) {
+            current.log("snooze-screensaver: speaking failed: " + failure);
+        }
     }
 
     /** Maximum snoozes as a number entity, so Home Assistant (a dashboard button) can read and set it. */
