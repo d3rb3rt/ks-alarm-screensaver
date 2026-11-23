@@ -35,7 +35,7 @@ python3 tools/test.py
 python3 tools/build.py
 ```
 
-Releases are built by the GitHub Actions workflow when a release is published.
+Releases are built by the GitHub Actions workflow when a tag like `v1.0.1` is pushed. The tag must match the version in the manifest, and the workflow creates the release.
 
 ## License
 

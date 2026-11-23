@@ -1,7 +1,7 @@
 name: Release
 on:
-  release:
-    types: [published]
+  push:
+    tags: ['v*']
   workflow_dispatch:
 permissions:
   contents: write
@@ -15,12 +15,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 - <<'PY'
+          import json
           import os
 
           if os.environ['GITHUB_REF_TYPE'] != 'tag':
               raise SystemExit('Run this workflow on a release tag, not a branch.')
+          version = json.load(open('kiosk-satellite-plugin.json'))['version']
+          if os.environ['GITHUB_REF_NAME'] != 'v' + version:
+              raise SystemExit('Tag %s does not match manifest version %s.' % (os.environ['GITHUB_REF_NAME'], version))
           PY
-          gh release view "$GITHUB_REF_NAME"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -33,10 +36,12 @@ jobs:
         run: python3 tools/test.py
       - name: Build
         run: python3 tools/build.py --android-platform 35 --version "${GITHUB_REF_NAME#v}"
-      - name: Attach plugin assets to the release
+      - name: Create the release and attach plugin assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
           gh release upload "$GITHUB_REF_NAME" \
             dist/*.zip \
             dist/*.zip.sha256 \
