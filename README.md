@@ -24,8 +24,8 @@ A Kiosk Satellite plugin. While an alarm rings, a tap anywhere on the screen sno
 | Second key press window | Default 600 ms |
 | Language | Language of the built-in texts |
 | Speech through / Home Assistant speak action / Extra action data | KS alarm voice, or a Home Assistant action with its own volume |
-| Volume of this text | Per text, Home Assistant only |
-| Text on tap / double tap / last snooze | Texts said after a snooze, after a stop and on the last allowed snooze |
+| Volume of snooze / stop / last snooze text | Per text, Home Assistant only |
+| Text on snooze (tap) / stop (double tap) / last snooze | Texts said after a snooze, after a stop and on the last allowed snooze |
 
 A single tap runs after the double tap window, so a shorter window makes snoozing feel quicker.
 

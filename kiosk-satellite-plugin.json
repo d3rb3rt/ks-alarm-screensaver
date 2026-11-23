@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "snooze-screensaver",
   "name": "Snooze Screensaver",
-  "version": "3.1.0",
+  "version": "3.1.1",
   "apiVersion": 1,
   "minAndroidSdk": 24,
   "minAppVersion": "2026.11.30",
@@ -137,7 +137,7 @@
     {
       "key": "tapText",
       "type": "string",
-      "title": "Text on tap",
+      "title": "Text on snooze (tap)",
       "default": "",
       "group": "Speech",
       "description": "Said after a snooze, in KS's alarm voice and volume (Settings > Alarms). Empty: built-in text. - : silence. Placeholders: {n} this snooze, {total} snooze minutes so far, {length} one snooze, {max} the limit."
@@ -145,7 +145,7 @@
     {
       "key": "tapVolume",
       "type": "number",
-      "title": "Volume of this text",
+      "title": "Volume of snooze text",
       "default": 30,
       "min": 0,
       "max": 100,
@@ -157,7 +157,7 @@
     {
       "key": "stopText",
       "type": "string",
-      "title": "Text on double tap",
+      "title": "Text on stop (double tap)",
       "default": "",
       "group": "Speech",
       "description": "Said after the plugin stops the alarm. Empty: built-in text. - : silence. Placeholders: {n} this snooze, {total} snooze minutes so far, {length} one snooze, {max} the limit."
@@ -165,7 +165,7 @@
     {
       "key": "stopVolume",
       "type": "number",
-      "title": "Volume of this text",
+      "title": "Volume of stop text",
       "default": 60,
       "min": 0,
       "max": 100,
@@ -185,7 +185,7 @@
     {
       "key": "lastVolume",
       "type": "number",
-      "title": "Volume of this text",
+      "title": "Volume of last snooze text",
       "default": 60,
       "min": 0,
       "max": 100,
