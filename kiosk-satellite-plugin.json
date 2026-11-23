@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "snooze-screensaver",
   "name": "Snooze Screensaver",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "apiVersion": 1,
   "minAndroidSdk": 24,
   "minAppVersion": "2026.11.14",
@@ -13,7 +13,8 @@
   "capabilities": [
     "overlay",
     "host.read",
-    "ha"
+    "ha",
+    "entities"
   ],
   "settings": [
     {
@@ -46,7 +47,7 @@
       "title": "Tap action",
       "default": {},
       "group": "Alarm",
-      "description": "Runs on a single tap while the alarm rings, for example a script that snoozes."
+      "description": "Runs on a single tap while the alarm rings: pick the KS action that snoozes the alarm."
     },
     {
       "key": "doubleTapAction",
@@ -54,7 +55,7 @@
       "title": "Double tap action",
       "default": {},
       "group": "Alarm",
-      "description": "Runs on a double tap while the alarm rings, for example a script that stops it."
+      "description": "Runs on a double tap while the alarm rings: pick the KS action that stops the alarm."
     },
     {
       "key": "snoozeMinutes",
@@ -77,7 +78,7 @@
       "max": 20,
       "step": 1,
       "group": "Alarm",
-      "description": "0 means unlimited. Once this many snoozes are used, a further snooze is refused and the limit text is spoken; the alarm keeps ringing."
+      "description": "0 means unlimited. At the maximum a snooze is refused and the limit text spoken. Also a number entity in Home Assistant, so a dashboard can set it."
     },
     {
       "key": "resetMinutes",

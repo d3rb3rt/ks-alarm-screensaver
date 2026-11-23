@@ -28,7 +28,7 @@ A Kiosk Satellite plugin. While an alarm rings, a tap anywhere on the screen run
 | Snooze keys / Stop keys | Android key names, default both volume keys in both lists; a key in both lists snoozes first and stops on a quick second press |
 | Second key press window | Default 600 ms |
 | Snooze length | Length of one snooze as set in KS, for `{total}` and `{length}` |
-| Maximum snoozes | 0 for unlimited; from this count on, a tap is refused and the limit text is spoken |
+| Maximum snoozes | 0 for unlimited; also published as a number entity (`Maximum snoozes`) that Home Assistant can set, for example from a dashboard button |
 | New alarm after | Pause in minutes after which the count starts again |
 | Double tap window | How long a single tap waits for a second one, 200 to 600 ms |
 | Hint text | Shown below the label, empty for none |
@@ -51,7 +51,7 @@ To speak through another speaker, use `tts.speak` and put its fields under **Ext
 The ringing entity must reach the kiosk. If you filter entity updates for wall panels (for example with Lite Resources), add it to the kept entities.
 
 
-Kiosk Satellite 2026.11.14 or newer. The plugin needs the `overlay`, `host.read` and `ha` capabilities. `ha` is used for two things: watching the one entity you pick and calling the speak service you name. Nothing else is sent to Home Assistant.
+Kiosk Satellite 2026.11.14 or newer. The plugin needs the `overlay`, `host.read`, `ha` and `entities` capabilities (`entities` for the Maximum snoozes number). `ha` is used for two things: watching the one entity you pick and calling the speak service you name. Nothing else is sent to Home Assistant.
 
 ## Build
 

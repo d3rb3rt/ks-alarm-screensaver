@@ -80,6 +80,7 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         host.log("snooze-screensaver started");
         configure(settings);
         host.subscribe("device.key");
+        publishMax();
     }
 
     @Override
@@ -99,7 +100,10 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
 
         String next = entityId(settings.get("ringing"));
         Object max = settings.get("maxSnooze");
-        maxSnooze = max instanceof Number ? Math.max(0, ((Number) max).intValue()) : 0;
+        int nextMax = max instanceof Number ? Math.max(0, ((Number) max).intValue()) : 0;
+        boolean maxChanged = nextMax != maxSnooze;
+        maxSnooze = nextMax;
+        if (maxChanged) publishMax();
         tapVolume = percent(settings.get("tapVolume"), 50);
         stopVolume = percent(settings.get("stopVolume"), 100);
         maxVolume = percent(settings.get("maxVolume"), 100);
@@ -191,6 +195,10 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
     @Override
     public synchronized void onEvent(String event, Map<String, Object> payload) {
         if (host == null) return;
+        if (event.equals("number.max_snooze")) {
+            setMaxFromHomeAssistant(payload.get("value"));
+            return;
+        }
         if (entity.isEmpty()) return;
         if (event.equals("ks.device.key")) {
             onKey(payload);
@@ -206,6 +214,32 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
                 hide();
             }
         }
+    }
+
+    /** Maximum snoozes as a number entity, so Home Assistant (a dashboard button) can read and set it. */
+    private void publishMax() {
+        PluginHost current = host;
+        if (current == null) return;
+        Map<String, Object> meta = new HashMap<String, Object>();
+        meta.put("min", 0);
+        meta.put("max", 20);
+        meta.put("step", 1);
+        meta.put("mode", "box");
+        try {
+            current.publishNumber("max_snooze", "Maximum snoozes", meta, Double.valueOf(maxSnooze));
+        } catch (RuntimeException unsupported) {
+            current.log("snooze-screensaver: number entity unavailable: " + unsupported);
+        }
+    }
+
+    private void setMaxFromHomeAssistant(Object value) {
+        if (!(value instanceof Number)) throw new IllegalArgumentException("Maximum snoozes requires a number");
+        int applied = (int) Math.max(0, Math.min(20, Math.round(((Number) value).doubleValue())));
+        maxSnooze = applied;
+        Map<String, Object> change = new HashMap<String, Object>();
+        change.put("maxSnooze", applied);
+        host.updateSettings(change);
+        publishMax();
     }
 
     /**
