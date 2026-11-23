@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "snooze-screensaver",
   "name": "Snooze Screensaver",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "apiVersion": 1,
   "minAndroidSdk": 24,
   "minAppVersion": "2026.11.14",
@@ -24,6 +24,14 @@
       "default": "",
       "group": "Alarm",
       "description": "A binary sensor that is on while the alarm rings, such as the kiosk's Alarm ringing sensor."
+    },
+    {
+      "key": "snoozedUntil",
+      "type": "entity",
+      "title": "Snoozed until entity",
+      "default": "",
+      "group": "Alarm",
+      "description": "Optional: the kiosk's Alarm snoozed until sensor. Then the plugin knows when the alarm is snoozed (also from KS's own alarm screen) and learns the snooze length."
     },
     {
       "key": "snoozeLabel",
@@ -60,14 +68,14 @@
     {
       "key": "snoozeMinutes",
       "type": "number",
-      "title": "Snooze length",
-      "default": 5,
+      "title": "Snooze length in KS",
+      "default": 10,
       "min": 1,
       "max": 60,
       "step": 1,
       "unit": "min",
       "group": "Alarm",
-      "description": "One snooze as set in KS. Used for {total} and {length} and to know how long the alarm stays snoozed."
+      "description": "Copy of KS's snooze length, for {total} and {length}. With Snoozed until entity set, the plugin learns it at the first snooze and fills it in."
     },
     {
       "key": "maxSnooze",

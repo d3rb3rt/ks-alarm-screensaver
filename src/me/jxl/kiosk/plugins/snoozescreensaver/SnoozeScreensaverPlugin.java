@@ -47,12 +47,16 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
     private final Handler main = new Handler(Looper.getMainLooper());
     private volatile PluginHost host;
     private String entity = "";
+    /** Optional sensor with the time a snoozed alarm rings again (KS: Alarm snoozed until). */
+    private String snoozedEntity = "";
+    /** When the snoozed alarm rings again, from that sensor; 0 when it is not snoozed or unknown. */
+    private volatile long snoozedUntil;
     private String hint = "";
     private String label = "Snooze";
     private boolean showClock = true;
     private int count;
     private volatile int maxSnooze;
-    private volatile int snoozeMinutes = 5;
+    private volatile int snoozeMinutes = 10;
     private volatile int tapVolume = 50;
     private volatile int stopVolume = 100;
     private volatile int maxVolume = 100;
@@ -112,7 +116,14 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         Object kw = settings.get("keyWindowMs");
         keyWindowMs = kw instanceof Number ? ((Number) kw).intValue() : 600;
         Object length = settings.get("snoozeMinutes");
-        snoozeMinutes = length instanceof Number ? Math.max(0, ((Number) length).intValue()) : 5;
+        snoozeMinutes = length instanceof Number ? Math.max(1, ((Number) length).intValue()) : 10;
+        String nextSnoozed = entityId(settings.get("snoozedUntil"));
+        if (!nextSnoozed.equals(snoozedEntity)) {
+            if (!snoozedEntity.isEmpty()) host.unsubscribe("ha.entity." + snoozedEntity);
+            snoozedEntity = nextSnoozed;
+            snoozedUntil = 0;
+            if (!snoozedEntity.isEmpty()) host.subscribe("ha.entity." + snoozedEntity);
+        }
         Object reset = settings.get("resetMinutes");
         resetMs = (reset instanceof Number ? Math.max(1, ((Number) reset).intValue()) : 30) * 60000L;
         sayService = text(settings.get("sayService"));
@@ -202,6 +213,8 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         if (entity.isEmpty()) return;
         if (event.equals("ks.device.key")) {
             onKey(payload);
+        } else if (!snoozedEntity.isEmpty() && event.equals("ks.ha.entity." + snoozedEntity)) {
+            onSnoozedUntil(payload.get("state"));
         } else if (event.equals("ks.ha.entity." + entity)) {
             boolean ringing = "on".equals(payload.get("state"));
             host.log("snooze-screensaver event " + payload.get("state") + " showing=" + showing);
@@ -213,6 +226,48 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
             } else {
                 hide();
             }
+        }
+    }
+
+    /**
+     * The snoozed-until sensor changed. A new time in the future means a snooze: the plugin learns the snooze
+     * length from it (and saves it), and counts a snooze made elsewhere, such as on KS's own alarm screen.
+     */
+    private void onSnoozedUntil(Object state) {
+        long until = parseTime(state);
+        long now = System.currentTimeMillis();
+        long previous = snoozedUntil;
+        snoozedUntil = until > now ? until : 0;
+        if (snoozedUntil == 0 || snoozedUntil == previous) return;
+        int minutes = (int) Math.round((snoozedUntil - now) / 60000.0);
+        if (minutes >= 1 && minutes <= 120 && minutes != snoozeMinutes) {
+            snoozeMinutes = minutes;
+            try {
+                Map<String, Object> change = new HashMap<String, Object>();
+                change.put("snoozeMinutes", minutes);
+                host.updateSettings(change);
+            } catch (RuntimeException ignored) {
+                // Kept for this session only.
+            }
+        }
+        if (now - lastSnooze > 10000L) {
+            // Not this plugin's own snooze: count it too.
+            count++;
+            lastSnooze = now;
+            if (showing) refresh();
+        }
+    }
+
+    /** Home Assistant timestamps such as 2026-11-23T19:45:00.123456+00:00; 0 for unknown or anything else. */
+    static long parseTime(Object state) {
+        if (!(state instanceof String)) return 0;
+        String text = ((String) state).trim().replaceFirst("\\.\\d+", "");
+        if (text.endsWith("Z")) text = text.substring(0, text.length() - 1) + "+00:00";
+        try {
+            java.text.SimpleDateFormat format = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US);
+            return format.parse(text).getTime();
+        } catch (Exception notATime) {
+            return 0;
         }
     }
 
@@ -266,8 +321,9 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
     private void handleKey(boolean ringing, boolean snoozeKey, boolean stopKey) {
         long now = System.currentTimeMillis();
         boolean secondPress = lastKeySnooze > 0 && now - lastKeySnooze <= keyWindowMs;
-        boolean snoozed = !ringing && lastSnooze > 0
-            && now < lastSnooze + snoozeMinutes * 60000L + 120000L;
+        boolean snoozed = !ringing && (snoozedEntity.isEmpty()
+            ? lastSnooze > 0 && now < lastSnooze + snoozeMinutes * 60000L + 120000L
+            : now < snoozedUntil);
         if (stopKey && (secondPress || snoozed || (ringing && !snoozeKey))) {
             cancelPending();
             lastKeySnooze = 0;
@@ -286,6 +342,7 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         main.removeCallbacksAndMessages(null);
         host = null;
         entity = "";
+        snoozedEntity = "";
     }
 
     private void show() {
