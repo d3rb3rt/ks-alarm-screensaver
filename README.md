@@ -1,4 +1,4 @@
-# Alarm Tap
+# Snooze Screensaver
 
 A Kiosk Satellite plugin. While an alarm rings, a tap anywhere on the screen runs one action and a double tap runs another, for example snooze and stop.
 
