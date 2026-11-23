@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "alarm-tap",
   "name": "Alarm Tap",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "apiVersion": 1,
   "minAndroidSdk": 24,
   "minAppVersion": "2026.11.14",
@@ -66,7 +66,7 @@
       "step": 1,
       "unit": "min",
       "group": "Alarm",
-      "description": "Length of one snooze as set in Kiosk Satellite. Used for {min} in the texts: the snooze count times this value."
+      "description": "Length of one snooze as set in Kiosk Satellite. Used for {total} and {length} in the texts and to know how long the alarm stays snoozed."
     },
     {
       "key": "maxSnooze",
@@ -104,12 +104,20 @@
       "description": "A single tap runs after this wait, unless a second tap follows within it."
     },
     {
-      "key": "keys",
+      "key": "snoozeKeys",
       "type": "string",
-      "title": "Hardware keys",
+      "title": "Snooze keys",
       "default": "VOLUME_UP,VOLUME_DOWN",
       "group": "Keys",
-      "description": "Comma-separated Android key names without KEYCODE_. While the alarm rings, a press snoozes at once and a second press within the key window stops it. While it is snoozed, a press stops it. Empty means keys are not used. Turn on Kiosk Satellite's option to swallow the volume keys if they should not change the volume."
+      "description": "Keys that snooze while the alarm rings, comma-separated Android key names without KEYCODE_. A key listed here and under Stop keys snoozes on the first press and stops on a second press within the window. Empty means no key snoozes."
+    },
+    {
+      "key": "stopKeys",
+      "type": "string",
+      "title": "Stop keys",
+      "default": "VOLUME_UP,VOLUME_DOWN",
+      "group": "Keys",
+      "description": "Keys that stop the alarm, also while it is snoozed. A key that is only a stop key stops on the first press. Empty means no key stops. Turn on Kiosk Satellite's option to swallow the volume keys if they should not change the volume."
     },
     {
       "key": "keyWindowMs",
@@ -121,7 +129,7 @@
       "step": 50,
       "unit": "ms",
       "group": "Keys",
-      "description": "A second key press within this time after a key snooze stops the alarm."
+      "description": "For a key that both snoozes and stops: a second press within this time stops the alarm. For a snooze-only key, a second press within this time is ignored."
     },
     {
       "key": "hint",
@@ -151,9 +159,9 @@
       "key": "tapText",
       "type": "string",
       "title": "Text on tap",
-      "default": "Schlummer {n}",
+      "default": "Schlummer {n}, {total} Minuten",
       "group": "Speech",
-      "description": "Spoken when a tap snoozes. {n} is the snooze count, {min} the total snooze time in minutes, {max} the limit. Empty means silence."
+      "description": "Spoken when a tap or key snoozes. Empty means silence. Placeholders: {n} = number of this snooze, {total} = total snooze minutes so far ({n} × Snooze length), {length} = minutes of one snooze, {max} = Maximum snoozes."
     },
     {
       "key": "tapVolume",
@@ -173,7 +181,7 @@
       "title": "Text on double tap",
       "default": "Wecker beendet",
       "group": "Speech",
-      "description": "Spoken when a double tap stops the alarm."
+      "description": "Spoken when the alarm is stopped. Empty means silence. Placeholders: {n} = number of this snooze, {total} = total snooze minutes so far ({n} × Snooze length), {length} = minutes of one snooze, {max} = Maximum snoozes."
     },
     {
       "key": "stopVolume",
@@ -193,7 +201,7 @@
       "title": "Text at the limit",
       "default": "Maximale Schlummeranzahl erreicht",
       "group": "Speech",
-      "description": "Spoken when a tap is refused because the maximum is reached."
+      "description": "Spoken when a snooze is refused because the maximum is reached. Empty means silence. Placeholders: {n} = number of this snooze, {total} = total snooze minutes so far ({n} × Snooze length), {length} = minutes of one snooze, {max} = Maximum snoozes."
     },
     {
       "key": "maxVolume",

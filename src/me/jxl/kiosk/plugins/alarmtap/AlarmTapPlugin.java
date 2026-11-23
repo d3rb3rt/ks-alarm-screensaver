@@ -31,7 +31,7 @@ import me.jxl.kiosk.plugins.PluginHost;
  * quick taps run the double tap action. The plugin counts the snoozes itself and, from a chosen maximum on,
  * refuses further snoozes. Hardware keys can snooze and stop as well. It never decides what the actions do: the user picks them
  * (KS actions, Home Assistant services, scripts) in the action settings. Spoken texts go through a Home
- * Assistant service of your choice; {n}, {max} and {min} in them become the snooze count, the limit and the total snooze time in minutes.
+ * Assistant service of your choice; {n}, {total}, {length} and {max} in them become the snooze count, the total snooze minutes, the minutes of one snooze and the limit.
  */
 public final class AlarmTapPlugin implements KioskPlugin {
     static final String OVERLAY = "ring";
@@ -53,7 +53,8 @@ public final class AlarmTapPlugin implements KioskPlugin {
     private volatile int maxVolume = 100;
     private volatile long resetMs = 30L * 60000L;
     private long lastSnooze;
-    private volatile Set<String> keys = new HashSet<String>();
+    private volatile Set<String> snoozeKeys = new HashSet<String>();
+    private volatile Set<String> stopKeys = new HashSet<String>();
     private volatile int keyWindowMs = 600;
     /** Main thread only: when a key last snoozed, for the second press that stops. */
     private long lastKeySnooze;
@@ -94,7 +95,8 @@ public final class AlarmTapPlugin implements KioskPlugin {
         tapVolume = percent(settings.get("tapVolume"), 50);
         stopVolume = percent(settings.get("stopVolume"), 100);
         maxVolume = percent(settings.get("maxVolume"), 100);
-        keys = parseKeys(text(settings.get("keys")));
+        snoozeKeys = parseKeys(text(settings.get("snoozeKeys")));
+        stopKeys = parseKeys(text(settings.get("stopKeys")));
         Object kw = settings.get("keyWindowMs");
         keyWindowMs = kw instanceof Number ? ((Number) kw).intValue() : 600;
         Object length = settings.get("snoozeMinutes");
@@ -164,32 +166,36 @@ public final class AlarmTapPlugin implements KioskPlugin {
     }
 
     /**
-     * A hardware key while the alarm rings or is snoozed. Ringing: the first press snoozes at once, a second
-     * press within the key window stops. Snoozed: a press stops. Otherwise keys are left alone.
+     * A hardware key while the alarm rings or is snoozed. A key can be a snooze key, a stop key or both.
+     * Both: the first press snoozes at once, a second press within the key window stops. Stop key: a press
+     * stops, also while snoozed. Snooze key: a press snoozes; a second press within the window is ignored.
+     * Otherwise keys are left alone.
      */
     private void onKey(Map<String, Object> payload) {
-        if (keys.isEmpty() || !"down".equals(payload.get("action"))) return;
+        if (!"down".equals(payload.get("action"))) return;
         Object repeat = payload.get("repeat");
         if (repeat instanceof Number && ((Number) repeat).intValue() != 0) return;
         String key = String.valueOf(payload.get("key")).toUpperCase();
-        if (!keys.contains(key)) return;
+        final boolean snoozeKey = snoozeKeys.contains(key);
+        final boolean stopKey = stopKeys.contains(key);
+        if (!snoozeKey && !stopKey) return;
         final boolean ringing = showing;
         main.post(new Runnable() {
-            @Override public void run() { handleKey(ringing); }
+            @Override public void run() { handleKey(ringing, snoozeKey, stopKey); }
         });
     }
 
     /** Main thread. */
-    private void handleKey(boolean ringing) {
+    private void handleKey(boolean ringing, boolean snoozeKey, boolean stopKey) {
         long now = System.currentTimeMillis();
         boolean secondPress = lastKeySnooze > 0 && now - lastKeySnooze <= keyWindowMs;
         boolean snoozed = !ringing && lastSnooze > 0
             && now < lastSnooze + snoozeMinutes * 60000L + 120000L;
-        if (secondPress || (snoozed && !ringing)) {
+        if (stopKey && (secondPress || snoozed || (ringing && !snoozeKey))) {
             cancelPending();
             lastKeySnooze = 0;
             doStop();
-        } else if (ringing) {
+        } else if (snoozeKey && ringing && !secondPress) {
             cancelPending();
             int before = count;
             doSnooze();
@@ -352,7 +358,9 @@ public final class AlarmTapPlugin implements KioskPlugin {
         }
         if (volumePercent > 0) data.put("volume", volumePercent / 100.0);
         data.put("message", template.replace("{n}", String.valueOf(count)).replace("{max}", String.valueOf(maxSnooze))
-            .replace("{min}", String.valueOf(count * snoozeMinutes)));
+            .replace("{total}", String.valueOf(count * snoozeMinutes))
+            .replace("{min}", String.valueOf(count * snoozeMinutes))
+            .replace("{length}", String.valueOf(snoozeMinutes)));
         Map<String, Object> message = new HashMap<String, Object>();
         message.put("type", "call_service");
         message.put("domain", sayService.substring(0, dot));
