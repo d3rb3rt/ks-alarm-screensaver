@@ -9,7 +9,7 @@ A Kiosk Satellite plugin. While an alarm rings, a tap anywhere on the screen run
 - One tap runs the **Tap action** after a short wait. Two quick taps run the **Double tap action** instead.
 - Both are Kiosk Satellite action settings, so you pick anything the Gestures page offers, such as the KS actions for snooze and stop, a Home Assistant service or a script. The plugin does not know what they do.
 - The plugin counts the snoozes itself. With **Maximum snoozes** set, a tap that would exceed it speaks the limit text instead of snoozing, so the alarm keeps ringing. A double tap stops the alarm and resets the count. The count also starts again when the alarm rings after a long pause.
-- Each step can speak a text through a Home Assistant service. **Speak service** is a picker of the Home Assistant services that can speak (kiosk announce actions, `tts.*`, `assist_satellite.announce`); press Refresh to fill it. Not picked, the plugin uses the kiosk announce action when there is exactly one. Built-in texts come in English and German (**Language**: auto follows the device), your own texts replace them, a single `-` silences a step. Placeholders: `{n}` number of this snooze, `{total}` total snooze minutes (`{n}` × **Snooze length**), `{length}` minutes of one snooze, `{max}` the limit.
+- Each step can speak a text through a Home Assistant service. Set **Speak service** to the kiosk's own announce action (see below), or to `tts.speak` / `assist_satellite.announce`. Built-in texts come in English and German (**Language**: auto follows the device), your own texts replace them, a single `-` silences a step. Placeholders: `{n}` number of this snooze, `{total}` total snooze minutes (`{n}` × **Snooze length**), `{length}` minutes of one snooze, `{max}` the limit.
 - Hardware keys: each key can snooze, stop or both. A key that does both snoozes at once and stops on a second press within the key window. A stop key also stops the alarm while it is snoozed (the plugin remembers its own snooze and the snooze length). Keys work without the overlay. Turn on Kiosk Satellite's option to swallow the volume keys if they should not change the volume.
 - When the entity turns `off`, the overlay goes away.
 
@@ -21,7 +21,7 @@ A Kiosk Satellite plugin. While an alarm rings, a tap anywhere on the screen run
 | Snooze label | The big text, default Snooze |
 | Show the time | Current time above the label |
 | Tap action | Runs on a single tap, for example snooze |
-| Speak service / Extra service data | Picker of services that speak, and the fields the service needs besides the text (filled in by itself for a kiosk announce action) |
+| Speak service / Extra service data | Action that speaks, and the fields it needs besides the text (filled in by itself for a kiosk announce action) |
 | Volume per text | Percent, for a kiosk announce action only; 0 sends none |
 | Text on tap / double tap / at the limit | Spoken texts, `{n}`, `{total}`, `{length}`, `{max}` (see above) |
 | Double tap action | Runs on a double tap, for example stop |
@@ -34,6 +34,17 @@ A Kiosk Satellite plugin. While an alarm rings, a tap anywhere on the screen run
 | Hint text | Shown below the label, empty for none |
 
 A single tap runs after the double tap window, so a shorter window makes snoozing feel quicker.
+
+## Finding the speak action
+
+Kiosk Satellite gives every kiosk an announce action in Home Assistant, named after its ESPHome device: `esphome.<name>_announce`.
+
+1. In Home Assistant open **Developer tools > Actions**.
+2. Type `announce` in the action field.
+3. Pick the entry for this kiosk. The name under it, such as `esphome.bedroom_clock_announce`, goes into **Speak service**.
+4. Leave **Extra service data** empty: the plugin fills in the fields this action needs and sends the volume from the volume settings.
+
+To speak through another speaker, use `tts.speak` and put its fields under **Extra service data**, for example `{"entity_id": "tts.google_translate_en_com", "media_player_entity_id": "media_player.kitchen"}`. The volume settings then do nothing.
 
 ## Requirements
 

@@ -62,8 +62,6 @@ public final class AlarmTapPlugin implements KioskPlugin {
     /** Main thread only: when a key last snoozed, for the second press that stops. */
     private long lastKeySnooze;
     private volatile String sayService = "";
-    /** The kiosk's announce service found in Home Assistant when Speak service is empty. */
-    private volatile String detectedService = "";
     private volatile String language = "en";
     private volatile String sayData = "";
     private volatile String tapText = "";
@@ -80,7 +78,6 @@ public final class AlarmTapPlugin implements KioskPlugin {
         host.log("alarm-tap started");
         configure(settings);
         host.subscribe("device.key");
-        loadServices(null);
     }
 
     @Override
@@ -166,78 +163,6 @@ public final class AlarmTapPlugin implements KioskPlugin {
         return service.startsWith("esphome.") && service.endsWith("_announce");
     }
 
-    /**
-     * Reads the Home Assistant services that can speak, lists them as choices for Speak service and, while that
-     * setting is empty, uses the kiosk announce action when there is exactly one. run is the Refresh run or null.
-     */
-    private void loadServices(final String run) {
-        final PluginHost current = host;
-        if (current == null) return;
-        if (run != null) current.setupResult(run, "running", "Reading Home Assistant services");
-        Map<String, Object> message = new HashMap<String, Object>();
-        message.put("type", "get_services");
-        try {
-            current.haCall(message, new PluginHost.CommandCallback() {
-                @Override public void onResult(boolean ok, Object data, String error) {
-                    if (!ok || !(data instanceof Map)) {
-                        String why = "Could not read the Home Assistant services: " + error;
-                        if (run != null) current.setupResult(run, "error", why); else current.status(why, true);
-                        return;
-                    }
-                    listServices(current, (Map<?, ?>) data, run);
-                }
-            });
-        } catch (RuntimeException failure) {
-            if (run != null) current.setupResult(run, "error", String.valueOf(failure.getMessage()));
-        }
-    }
-
-    private void listServices(PluginHost current, Map<?, ?> all, String run) {
-        List<Map<String, Object>> choices = new ArrayList<Map<String, Object>>();
-        List<String> announce = new ArrayList<String>();
-        for (Map.Entry<?, ?> domain : all.entrySet()) {
-            String d = String.valueOf(domain.getKey());
-            if (!(domain.getValue() instanceof Map)) continue;
-            for (Map.Entry<?, ?> service : ((Map<?, ?>) domain.getValue()).entrySet()) {
-                String id = d + "." + service.getKey();
-                String group;
-                if (isKioskAnnounce(id)) { group = "Kiosk announce"; announce.add(id); }
-                else if (d.equals("tts")) group = "Text to speech";
-                else if (id.equals("assist_satellite.announce")) group = "Assist satellites";
-                else continue;
-                Map<String, Object> choice = new HashMap<String, Object>();
-                choice.put("id", id);
-                Object name = service.getValue() instanceof Map ? ((Map<?, ?>) service.getValue()).get("name") : null;
-                String label = name instanceof String && !((String) name).isEmpty() ? (String) name : id;
-                choice.put("label", label.length() > 120 ? label.substring(0, 120) : label);
-                choice.put("detail", id.length() > 120 ? id.substring(0, 120) : id);
-                choice.put("group", group);
-                choices.add(choice);
-            }
-        }
-        java.util.Collections.sort(choices, new java.util.Comparator<Map<String, Object>>() {
-            @Override public int compare(Map<String, Object> x, Map<String, Object> y) {
-                int g = String.valueOf(x.get("group")).compareTo(String.valueOf(y.get("group")));
-                return g != 0 ? -g : String.valueOf(x.get("id")).compareTo(String.valueOf(y.get("id")));
-            }
-        });
-        try {
-            current.setSettingChoices("sayService", choices);
-        } catch (UnsupportedOperationException older) {
-            String[] ids = new String[choices.size()];
-            for (int i = 0; i < ids.length; i++) ids[i] = String.valueOf(choices.get(i).get("id"));
-            current.setSettingChoices("sayService", ids, null);
-        }
-        detectedService = announce.size() == 1 ? announce.get(0) : "";
-        String outcome = choices.size() + " services found";
-        if (run != null) current.setupResult(run, "success", outcome);
-        if (sayService.isEmpty()) {
-            if (announce.size() == 1) current.status("Speaking through " + detectedService, false);
-            else if (announce.isEmpty()) current.status("No kiosk announce action found. Pick a Speak service.", true);
-            else current.status("Several kiosks found. Pick this kiosk's announce action as Speak service.", true);
-        }
-    }
-
     static Set<String> parseKeys(String list) {
         Set<String> out = new HashSet<String>();
         for (String part : list.split(",")) {
@@ -263,12 +188,6 @@ public final class AlarmTapPlugin implements KioskPlugin {
     @Override
     public synchronized void onEvent(String event, Map<String, Object> payload) {
         if (host == null) return;
-        if (event.equals("settings.choices") || event.equals("ks.settings.choices")) {
-            if ("sayService".equals(payload.get("key")) && payload.get("run") instanceof String) {
-                loadServices((String) payload.get("run"));
-            }
-            return;
-        }
         if (entity.isEmpty()) return;
         if (event.equals("ks.device.key")) {
             onKey(payload);
@@ -457,7 +376,7 @@ public final class AlarmTapPlugin implements KioskPlugin {
     /** Speaks the text through the chosen Home Assistant service. {n} is the snooze count, {max} the limit. */
     private void say(String template, int volumePercent) {
         PluginHost current = host;
-        final String service = sayService.isEmpty() ? detectedService : sayService;
+        final String service = sayService;
         if (current == null || template.isEmpty() || service.isEmpty()) return;
         int dot = service.indexOf('.');
         if (dot <= 0 || dot == service.length() - 1) {

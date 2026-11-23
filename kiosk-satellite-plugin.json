@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "alarm-tap",
   "name": "Alarm Tap",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "apiVersion": 1,
   "minAndroidSdk": 24,
   "minAppVersion": "2026.11.14",
@@ -158,9 +158,7 @@
       "title": "Speak service",
       "default": "",
       "group": "Speech",
-      "description": "Home Assistant service that speaks: this kiosk's announce action, a text-to-speech service or an Assist satellite announcement. Not picked: the plugin uses the kiosk announce action when Home Assistant has exactly one.",
-      "choices": "plugin",
-      "emptyText": "Press Refresh to list the Home Assistant services that can speak."
+      "description": "Home Assistant action that speaks, written as domain.action. Empty means no speech. To find this kiosk's own announce action: in Home Assistant open Developer tools > Actions, type announce and pick the entry named after this kiosk, for example esphome.bedroom_clock_announce, then copy the name shown under it. Other choices: tts.speak or assist_satellite.announce, with their fields under Extra service data."
     },
     {
       "key": "sayData",
