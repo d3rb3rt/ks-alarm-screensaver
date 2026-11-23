@@ -41,6 +41,7 @@ public final class AlarmTapPlugin implements KioskPlugin {
     @Override
     public synchronized void start(PluginHost host, Map<String, Object> settings) {
         this.host = host;
+        host.log("alarm-tap started");
         configure(settings);
     }
 
@@ -73,8 +74,15 @@ public final class AlarmTapPlugin implements KioskPlugin {
 
     @Override
     public synchronized void onEvent(String event, Map<String, Object> payload) {
-        if (host == null || entity.isEmpty() || !event.equals("ks.ha.entity." + entity)) return;
+        if (host == null || entity.isEmpty()) return;
+        if (!event.equals("ks.ha.entity." + entity)) {
+            host.log("alarm-tap ignored event " + event);
+            return;
+        }
         boolean ringing = "on".equals(payload.get("state"));
+        host.status("Watching " + entity + " - last " + payload.get("state") + " at "
+            + new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(new java.util.Date()), false);
+        host.log("alarm-tap event " + payload.get("state") + " showing=" + showing);
         if (ringing == showing) return;
         if (ringing) show(); else hide();
     }
@@ -96,9 +104,18 @@ public final class AlarmTapPlugin implements KioskPlugin {
             // Older KS versions have no layers: the overlay then draws over the dashboard only.
         }
         final String shownHint = hint;
-        host.showOverlay(OVERLAY, spec, new OverlayFactory() {
-            @Override public View create(Context context, KsTheme theme) { return build(context, theme, shownHint); }
-        });
+        try {
+            host.showOverlay(OVERLAY, spec, new OverlayFactory() {
+                @Override public View create(Context context, KsTheme theme) {
+                    host.log("alarm-tap overlay created");
+                    return build(context, theme, shownHint);
+                }
+            });
+            host.log("alarm-tap overlay requested");
+        } catch (RuntimeException failure) {
+            host.log("alarm-tap overlay failed: " + failure);
+            host.status("Overlay failed: " + failure.getMessage(), true);
+        }
     }
 
     private void hide() {
