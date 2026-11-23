@@ -2,37 +2,21 @@
   "schemaVersion": 1,
   "id": "snooze-screensaver",
   "name": "Snooze Screensaver",
-  "version": "2.2.1",
+  "version": "3.0.0",
   "apiVersion": 1,
   "minAndroidSdk": 24,
-  "minAppVersion": "2026.11.14",
+  "minAppVersion": "2026.11.30",
   "entryClass": "me.jxl.kiosk.plugins.snoozescreensaver.SnoozeScreensaverPlugin",
-  "description": "While an alarm rings, a black screen shows the time, the snooze count and a hint. A tap or a hardware key snoozes, a double tap or a second key press stops. Counts and limits snoozes and can speak a text for each step. Needs the Clock or Weather Mood screensaver with Let alarms take over: KS's own alarm screen covers plugin overlays.",
+  "description": "While an alarm rings, a black screen shows the time, the snooze count and a hint. A tap or a hardware key snoozes, a double tap or a second key press stops. Counts and limits snoozes and says a short text after each step. Works without Home Assistant (speech uses KS's alarm voice). Needs the Clock or Weather Mood screensaver with Let alarms take over: KS's own alarm screen covers plugin overlays.",
   "author": "d3rb3rt",
   "license": "MIT",
   "capabilities": [
     "overlay",
     "host.read",
-    "ha",
+    "host.control",
     "entities"
   ],
   "settings": [
-    {
-      "key": "ringing",
-      "type": "entity",
-      "title": "Alarm ringing entity",
-      "default": "",
-      "group": "Alarm",
-      "description": "A binary sensor that is on while the alarm rings, such as the kiosk's Alarm ringing sensor."
-    },
-    {
-      "key": "snoozedUntil",
-      "type": "entity",
-      "title": "Snoozed until entity",
-      "default": "",
-      "group": "Alarm",
-      "description": "Optional: the kiosk's Alarm snoozed until sensor. Then the plugin knows when the alarm is snoozed (also from KS's own alarm screen) and learns the snooze length."
-    },
     {
       "key": "snoozeLabel",
       "type": "string",
@@ -50,34 +34,6 @@
       "description": "Shows the current time above the snooze label."
     },
     {
-      "key": "tapAction",
-      "type": "action",
-      "title": "Tap action",
-      "default": {},
-      "group": "Alarm",
-      "description": "Runs on a single tap while the alarm rings: pick the KS action that snoozes the alarm."
-    },
-    {
-      "key": "doubleTapAction",
-      "type": "action",
-      "title": "Double tap action",
-      "default": {},
-      "group": "Alarm",
-      "description": "Runs on a double tap while the alarm rings: pick the KS action that stops the alarm."
-    },
-    {
-      "key": "snoozeMinutes",
-      "type": "number",
-      "title": "Snooze length in KS",
-      "default": 10,
-      "min": 1,
-      "max": 60,
-      "step": 1,
-      "unit": "min",
-      "group": "Alarm",
-      "description": "Copy of KS's snooze length, for {total} and {length}. With Snoozed until entity set, the plugin learns it at the first snooze and fills it in."
-    },
-    {
       "key": "maxSnooze",
       "type": "number",
       "title": "Maximum snoozes",
@@ -86,19 +42,7 @@
       "max": 20,
       "step": 1,
       "group": "Alarm",
-      "description": "0 means unlimited. At the maximum a snooze is refused and the limit text spoken. Also a number entity in Home Assistant, so a dashboard can set it."
-    },
-    {
-      "key": "resetMinutes",
-      "type": "number",
-      "title": "New alarm after",
-      "default": 30,
-      "min": 5,
-      "max": 180,
-      "step": 5,
-      "unit": "min",
-      "group": "Alarm",
-      "description": "The count starts again when the alarm rings after a pause longer than this."
+      "description": "0 means unlimited. The last allowed snooze says so; after it a tap no longer snoozes and the alarm rings on until stopped. Also a number entity in Home Assistant."
     },
     {
       "key": "doubleTapMs",
@@ -162,40 +106,12 @@
       "description": "Language of the built-in texts. Auto follows the device (German or English, otherwise English). Texts you type are used as they are."
     },
     {
-      "key": "sayService",
-      "type": "string",
-      "title": "Speak service",
-      "default": "",
-      "group": "Speech",
-      "description": "Action that speaks, as domain.action. Empty: no speech. This kiosk's own: Developer tools > Actions in Home Assistant, type announce, take the name of this kiosk's entry, e.g. esphome.bedroom_clock_announce. See the README."
-    },
-    {
-      "key": "sayData",
-      "type": "string",
-      "title": "Extra service data (JSON)",
-      "default": "",
-      "group": "Speech",
-      "description": "More fields for the action, as JSON; the text goes as \"message\". Empty fits the kiosk announce action. For tts.speak e.g. {\"entity_id\": \"tts.x\", \"media_player_entity_id\": \"media_player.y\"}."
-    },
-    {
       "key": "tapText",
       "type": "string",
       "title": "Text on tap",
       "default": "",
       "group": "Speech",
-      "description": "Spoken on snooze. Empty: built-in text. - : silence. Placeholders: {n} this snooze, {total} snooze minutes so far, {length} one snooze, {max} the limit."
-    },
-    {
-      "key": "tapVolume",
-      "type": "number",
-      "title": "Volume of the snooze announcement",
-      "default": 50,
-      "min": 0,
-      "max": 100,
-      "step": 5,
-      "unit": "%",
-      "group": "Speech",
-      "description": "Only for a kiosk announce action, sent as its volume (0 to 1). 0 sends none. Other services play at the speaker's volume."
+      "description": "Said after a snooze, in KS's alarm voice and volume (Settings > Alarms). Empty: built-in text. - : silence. Placeholders: {n} this snooze, {total} snooze minutes so far, {length} one snooze, {max} the limit."
     },
     {
       "key": "stopText",
@@ -203,39 +119,15 @@
       "title": "Text on double tap",
       "default": "",
       "group": "Speech",
-      "description": "Spoken when the alarm stops. Empty: built-in text. - : silence. Placeholders: {n} this snooze, {total} snooze minutes so far, {length} one snooze, {max} the limit."
+      "description": "Said after the plugin stops the alarm. Empty: built-in text. - : silence. Placeholders: {n} this snooze, {total} snooze minutes so far, {length} one snooze, {max} the limit."
     },
     {
-      "key": "stopVolume",
-      "type": "number",
-      "title": "Volume of the end of alarm announcement",
-      "default": 100,
-      "min": 0,
-      "max": 100,
-      "step": 5,
-      "unit": "%",
-      "group": "Speech",
-      "description": "Only for a kiosk announce action, sent as its volume (0 to 1). 0 sends none. Other services play at the speaker's volume."
-    },
-    {
-      "key": "maxText",
+      "key": "lastText",
       "type": "string",
-      "title": "Text at the limit",
+      "title": "Text on last snooze",
       "default": "",
       "group": "Speech",
-      "description": "Spoken when the maximum is reached. Empty: built-in text. - : silence. Placeholders: {n} this snooze, {total} snooze minutes so far, {length} one snooze, {max} the limit."
-    },
-    {
-      "key": "maxVolume",
-      "type": "number",
-      "title": "Volume of the limit announcement",
-      "default": 100,
-      "min": 0,
-      "max": 100,
-      "step": 5,
-      "unit": "%",
-      "group": "Speech",
-      "description": "Only for a kiosk announce action, sent as its volume (0 to 1). 0 sends none. Other services play at the speaker's volume."
+      "description": "Said instead of the snooze text on the last allowed snooze. Empty: built-in text. - : silence. Placeholders: {n} this snooze, {total} snooze minutes so far, {length} one snooze, {max} the limit."
     }
   ]
 }

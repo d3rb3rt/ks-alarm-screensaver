@@ -1,58 +1,35 @@
 # Snooze Screensaver
 
-A Kiosk Satellite plugin. While an alarm rings, a tap anywhere on the screen runs one action and a double tap runs another, for example snooze and stop.
+A Kiosk Satellite plugin. While an alarm rings, a tap anywhere on the screen snoozes and a double tap stops it. Hardware keys can do the same.
 
 ## How it works
 
-- You choose a Home Assistant entity that is `on` while the alarm rings, such as the kiosk's **Alarm ringing** binary sensor.
-- While it is `on`, the plugin shows a black full screen overlay with the time, a big snooze label with the snooze count and a short hint. It takes every touch. It draws over the screensaver, the menu and the camera views. KS draws its own alarm screen above all plugin overlays, so the plugin needs a screensaver that shows the ring: the Clock or Weather Mood screensaver with **Let alarms take over** turned on.
-- One tap runs the **Tap action** after a short wait. Two quick taps run the **Double tap action** instead.
-- Both are Kiosk Satellite action settings, so you pick anything the Gestures page offers, such as the KS actions for snooze and stop, a Home Assistant service or a script. The plugin does not know what they do.
-- The plugin counts the snoozes itself. With **Maximum snoozes** set, a tap that would exceed it speaks the limit text instead of snoozing, so the alarm keeps ringing. Stopping the alarm resets the count, wherever it is stopped (double tap, a key, KS's alarm screen, a dashboard). The count also starts again when the alarm rings after a long pause.
-- Each step can speak a text through a Home Assistant service. Set **Speak service** to the kiosk's own announce action (see below), or to `tts.speak` / `assist_satellite.announce`. Built-in texts come in English and German (**Language**: auto follows the device), your own texts replace them, a single `-` silences a step. Placeholders: `{n}` number of this snooze, `{total}` total snooze minutes (`{n}` × **Snooze length**), `{length}` minutes of one snooze, `{max}` the limit.
-- Hardware keys: each key can snooze, stop or both. A key that does both snoozes at once and stops on a second press within the key window. A stop key also stops the alarm while it is snoozed (from the Snoozed until sensor, or else from its own snooze and the snooze length). Keys work without the overlay. Turn on Kiosk Satellite's option to swallow the volume keys if they should not change the volume.
-- When the entity turns `off`, the overlay goes away.
+- The plugin follows the kiosk's own alarms (**Settings > Alarms**) through the KS alarm API. Ringing, snoozing and stopping work without Home Assistant.
+- While an alarm rings, the plugin shows a black full screen overlay with the time, a big snooze label with the snooze count and a short hint. It takes every touch. KS draws its own alarm screen above all plugin overlays, so the plugin needs a screensaver that shows the ring: the Clock or Weather Mood screensaver with **Let alarms take over** turned on.
+- One tap snoozes after a short wait. Two quick taps stop the alarm.
+- The plugin counts the snoozes of each ring, also snoozes made elsewhere, such as on KS's own alarm screen. With **Maximum snoozes** set, the last allowed snooze says so, and after it a tap no longer snoozes: the alarm rings on until it is stopped.
+- After a snooze and after a stop the plugin says a short text with the alarm's voice and volume from **Settings > Alarms > Text to Speech**. KS cannot speak while the alarm rings, so the words come right after the snooze. Built-in texts come in English and German (**Language**: Auto follows the device), your own texts replace them, a single `-` silences a step. Placeholders: `{n}` number of this snooze, `{total}` snooze minutes so far, `{length}` minutes of one snooze, `{max}` the limit. Speech goes through Home Assistant's text to speech, as the alarm's own phrase does.
+- Hardware keys: each key can snooze, stop or both. A key that does both snoozes at once and stops on a second press within the key window. A stop key also stops the alarm while it is snoozed. KS does not let plugins hold back a key, so a volume key still changes the volume.
 
 ## Settings
 
 | Setting | Meaning |
 | --- | --- |
-| Alarm ringing entity | Binary sensor that is `on` while the alarm rings |
 | Snooze label | The big text, default Snooze |
 | Show the time | Current time above the label |
-| Tap action | Runs on a single tap, for example snooze |
-| Speak service / Extra service data | Action that speaks, and the fields it needs besides the text (filled in by itself for a kiosk announce action) |
-| Volume per text | Percent, for a kiosk announce action only; 0 sends none |
-| Text on tap / double tap / at the limit | Spoken texts, `{n}`, `{total}`, `{length}`, `{max}` (see above) |
-| Double tap action | Runs on a double tap, for example stop |
+| Maximum snoozes | 0 for unlimited; also published as a number entity (`Maximum snoozes`) that Home Assistant can set, for example from a dashboard button |
+| Double tap window | How long a single tap waits for a second one, 200 to 600 ms |
+| Hint text | Shown below the label, empty for the built-in hint, `-` for none |
 | Snooze keys / Stop keys | Android key names, default both volume keys in both lists; a key in both lists snoozes first and stops on a quick second press |
 | Second key press window | Default 600 ms |
-| Snoozed until entity | Optional, the kiosk's Alarm snoozed until sensor: exact snoozed state (also for snoozes on KS's own alarm screen) and the snooze length |
-| Snooze length in KS | Copy of KS's snooze length for `{total}` and `{length}`; learned by itself with the sensor above |
-| Maximum snoozes | 0 for unlimited; also published as a number entity (`Maximum snoozes`) that Home Assistant can set, for example from a dashboard button |
-| New alarm after | Pause in minutes after which the count starts again |
-| Double tap window | How long a single tap waits for a second one, 200 to 600 ms |
-| Hint text | Shown below the label, empty for none |
+| Language | Language of the built-in texts |
+| Text on tap / double tap / last snooze | Texts said after a snooze, after a stop and on the last allowed snooze |
 
 A single tap runs after the double tap window, so a shorter window makes snoozing feel quicker.
 
-## Finding the speak action
-
-Kiosk Satellite gives every kiosk an announce action in Home Assistant, named after its ESPHome device: `esphome.<name>_announce`.
-
-1. In Home Assistant open **Developer tools > Actions**.
-2. Type `announce` in the action field.
-3. Pick the entry for this kiosk. The name under it, such as `esphome.bedroom_clock_announce`, goes into **Speak service**.
-4. Leave **Extra service data** empty: the plugin fills in the fields this action needs and sends the volume from the volume settings.
-
-To speak through another speaker, use `tts.speak` and put its fields under **Extra service data**, for example `{"entity_id": "tts.google_translate_en_com", "media_player_entity_id": "media_player.kitchen"}`. The volume settings then do nothing.
-
 ## Requirements
 
-The ringing entity must reach the kiosk. If you filter entity updates for wall panels (for example with Lite Resources), add it, and the snoozed-until sensor, to the kept entities.
-
-
-Kiosk Satellite 2026.11.14 or newer. The plugin needs the `overlay`, `host.read`, `ha` and `entities` capabilities (`entities` for the Maximum snoozes number). `ha` is used for two things: watching the one entity you pick and calling the speak service you name. Nothing else is sent to Home Assistant.
+Kiosk Satellite 2026.11.30 or newer. The plugin needs the `overlay`, `host.read`, `host.control` and `entities` capabilities (`entities` for the Maximum snoozes number).
 
 ## Build
 

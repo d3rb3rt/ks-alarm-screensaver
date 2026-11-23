@@ -12,16 +12,12 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextClock;
 import android.widget.TextView;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Set;
-import java.util.Iterator;
 import java.util.Locale;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
-import org.json.JSONObject;
-import java.util.regex.Pattern;
+import java.util.Set;
 import me.jxl.kiosk.plugins.KioskPlugin;
 import me.jxl.kiosk.plugins.KsTheme;
 import me.jxl.kiosk.plugins.OverlayFactory;
@@ -29,62 +25,69 @@ import me.jxl.kiosk.plugins.OverlaySpec;
 import me.jxl.kiosk.plugins.PluginHost;
 
 /**
- * While the chosen entity says the alarm rings, a black full screen overlay takes every touch and shows
- * the time, a big snooze label with the snooze count and a short hint. One tap runs the tap action, two
- * quick taps run the double tap action. The plugin counts the snoozes itself and, from a chosen maximum on,
- * refuses further snoozes. Hardware keys can snooze and stop as well. It never decides what the actions do: the user picks them
- * (KS actions, Home Assistant services, scripts) in the action settings. Spoken texts go through a Home
- * Assistant service of your choice; {n}, {total}, {length} and {max} in them become the snooze count, the total snooze minutes, the minutes of one snooze and the limit.
+ * Follows this kiosk's own alarms through the KS alarm API, without Home Assistant. While an alarm rings, a
+ * black full screen overlay takes every touch and shows the time, a big snooze label with the snooze count
+ * and a short hint. One tap snoozes, two quick taps stop. Hardware keys can do the same. The plugin counts the
+ * snoozes of each ring; the last allowed snooze says so, and after it a tap no longer snoozes, so the alarm
+ * keeps ringing until it is stopped. After a snooze and a stop it speaks a short text with the alarm's voice.
  */
 public final class SnoozeScreensaverPlugin implements KioskPlugin {
     static final String OVERLAY = "ring";
     static final String REQUIREMENT = "Needs the Clock or Weather Mood screensaver with Let alarms take over. "
         + "Without it, KS's own alarm screen covers this plugin.";
-    static final String TAP = "tapAction";
-    static final String DOUBLE_TAP = "doubleTapAction";
-    private static final Pattern ENTITY = Pattern.compile("[a-z0-9_]+\\.[a-z0-9_]+");
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private volatile PluginHost host;
-    private String entity = "";
-    /** Optional sensor with the time a snoozed alarm rings again (KS: Alarm snoozed until). */
-    private String snoozedEntity = "";
-    /** When the snoozed alarm rings again, from that sensor; 0 when it is not snoozed or unknown. */
+
+    // Alarm state from KS. Changed on the plugin worker, read on the main thread.
+    private volatile String phase = "idle";
+    private volatile String ringAt = "";
     private volatile long snoozedUntil;
-    private String hint = "";
-    private String label = "Snooze";
-    private boolean showClock = true;
-    private int count;
+    /** Snoozes of the current ring. */
+    private volatile int count;
+    /** Minutes of one snooze, learned from snoozedUntil. */
+    private volatile int snoozeMinutes;
+    /** The plugin asked KS to stop: speak once the stop is confirmed. */
+    private volatile boolean stopRequested;
+
+    // Settings.
+    private volatile String hint = "";
+    private volatile String label = "Snooze";
+    private volatile boolean showClock = true;
     private volatile int maxSnooze;
-    private volatile int snoozeMinutes = 10;
-    private volatile int tapVolume = 50;
-    private volatile int stopVolume = 100;
-    private volatile int maxVolume = 100;
-    private volatile long resetMs = 30L * 60000L;
-    private long lastSnooze;
+    private volatile int windowMs = 350;
     private volatile Set<String> snoozeKeys = new HashSet<String>();
     private volatile Set<String> stopKeys = new HashSet<String>();
     private volatile int keyWindowMs = 600;
-    /** Main thread only: when a key last snoozed, for the second press that stops. */
-    private long lastKeySnooze;
-    private volatile String sayService = "";
     private volatile String language = "en";
-    private volatile String sayData = "";
     private volatile String tapText = "";
     private volatile String stopText = "";
-    private volatile String maxText = "";
-    private volatile int windowMs = 350;
-    private boolean showing;
+    private volatile String lastText = "";
+
+    private volatile boolean showing;
     /** Main thread only: the single tap that waits to see whether a second one follows. */
     private Runnable pendingTap;
+    /** Main thread only: when a key last snoozed, for the second press that stops. */
+    private long lastKeySnooze;
 
     @Override
     public synchronized void start(PluginHost host, Map<String, Object> settings) {
         this.host = host;
         host.log("snooze-screensaver started");
         configure(settings);
+        try {
+            host.subscribe("alarm.state");
+        } catch (IllegalArgumentException olderHost) {
+            host.status("This plugin needs Kiosk Satellite 2026.11.30 or newer.", true);
+            return;
+        }
         host.subscribe("device.key");
         publishMax();
+        host.executeCommand("getAlarmState", Collections.<String, Object>emptyMap(), new PluginHost.CommandCallback() {
+            @Override public void onResult(boolean ok, Object data, String error) {
+                if (ok && data instanceof Map) onAlarmState(asMap(data), false);
+            }
+        });
     }
 
     @Override
@@ -101,54 +104,24 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         hint = nextHint;
         label = nextLabel;
         showClock = nextClock;
-
-        String next = entityId(settings.get("ringing"));
         Object max = settings.get("maxSnooze");
         int nextMax = max instanceof Number ? Math.max(0, ((Number) max).intValue()) : 0;
         boolean maxChanged = nextMax != maxSnooze;
         maxSnooze = nextMax;
         if (maxChanged) publishMax();
-        tapVolume = percent(settings.get("tapVolume"), 50);
-        stopVolume = percent(settings.get("stopVolume"), 100);
-        maxVolume = percent(settings.get("maxVolume"), 100);
         snoozeKeys = parseKeys(text(settings.get("snoozeKeys")));
         stopKeys = parseKeys(text(settings.get("stopKeys")));
         Object kw = settings.get("keyWindowMs");
         keyWindowMs = kw instanceof Number ? ((Number) kw).intValue() : 600;
-        Object length = settings.get("snoozeMinutes");
-        snoozeMinutes = length instanceof Number ? Math.max(1, ((Number) length).intValue()) : 10;
-        String nextSnoozed = entityId(settings.get("snoozedUntil"));
-        if (!nextSnoozed.equals(snoozedEntity)) {
-            if (!snoozedEntity.isEmpty()) host.unsubscribe("ha.entity." + snoozedEntity);
-            snoozedEntity = nextSnoozed;
-            snoozedUntil = 0;
-            if (!snoozedEntity.isEmpty()) host.subscribe("ha.entity." + snoozedEntity);
-        }
-        Object reset = settings.get("resetMinutes");
-        resetMs = (reset instanceof Number ? Math.max(1, ((Number) reset).intValue()) : 30) * 60000L;
-        sayService = text(settings.get("sayService"));
-        sayData = text(settings.get("sayData"));
         tapText = text(settings.get("tapText"));
         stopText = text(settings.get("stopText"));
-        maxText = text(settings.get("maxText"));
-        boolean changed = !next.equals(entity);
-        if (changed) {
-            if (!entity.isEmpty()) host.unsubscribe("ha.entity." + entity);
-            entity = next;
-            hide();
-            if (!entity.isEmpty()) host.subscribe("ha.entity." + entity);
-        } else if (textChanged && showing) {
-            show();
-        }
+        lastText = text(settings.get("lastText"));
+        if ((textChanged || maxChanged) && showing) refresh();
         // Shown in red on purpose: the plugin cannot read whether the screensaver takes over alarms.
-        host.status(entity.isEmpty() ? "Choose the alarm ringing entity in the settings." : REQUIREMENT, true);
+        host.status(REQUIREMENT, true);
     }
 
-    private static int percent(Object value, int fallback) {
-        return value instanceof Number ? Math.max(0, Math.min(100, ((Number) value).intValue())) : fallback;
-    }
-
-    /** "auto" follows the device language; German and English are built in, everything else is English. */
+    /** "Auto" follows the device language; German and English are built in, everything else is English. */
     static String language(String setting) {
         if (setting.equals("Deutsch")) return "de";
         if (setting.equals("English")) return "en";
@@ -160,9 +133,10 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         switch (key) {
             case "label": return de ? "Schlummern" : "Snooze";
             case "hint": return de ? "Doppeltippen: Wecker beenden" : "Double tap: end alarm";
+            case "last-hint": return de ? "Kein Schlummern mehr. Doppeltippen: Wecker beenden" : "No more snoozing. Double tap: end alarm";
             case "tap": return de ? "Schlummer {n}, {total} Minuten" : "Snooze {n}, {total} minutes";
+            case "last": return de ? "Letzter Schlummer, {total} Minuten" : "Last snooze, {total} minutes";
             case "stop": return de ? "Wecker beendet" : "Alarm stopped";
-            case "max": return de ? "Maximale Schlummeranzahl erreicht" : "Maximum snoozes reached";
             default: return "";
         }
     }
@@ -171,14 +145,6 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
     private String pick(String own, String key) {
         if (own.equals("-")) return "";
         return own.isEmpty() ? builtin(key, language) : own;
-    }
-
-    static final String ESPHOME_DEFAULTS = "{\"url\": \"\", \"repeat\": 0, \"repeat_pause\": 0, \"chime\": false, "
-        + "\"chime_file\": \"\", \"tts_engine\": \"\", \"tts_language\": \"\", \"tts_voice\": \"\", \"audio_only\": true}";
-
-    /** A kiosk announce action of the ESPHome API: it takes the volume and the defaults above. */
-    static boolean isKioskAnnounce(String service) {
-        return service.startsWith("esphome.") && service.endsWith("_announce");
     }
 
     static Set<String> parseKeys(String list) {
@@ -195,9 +161,9 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         return value instanceof String ? ((String) value).trim() : "";
     }
 
-    private static String entityId(Object value) {
-        String id = text(value);
-        return ENTITY.matcher(id).matches() ? id : "";
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> asMap(Object value) {
+        return (Map<String, Object>) value;
     }
 
     @Override
@@ -208,85 +174,46 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         if (host == null) return;
         if (event.equals("number.max_snooze")) {
             setMaxFromHomeAssistant(payload.get("value"));
-            return;
-        }
-        if (entity.isEmpty()) return;
-        if (event.equals("ks.device.key")) {
+        } else if (event.equals("ks.alarm.state") || event.equals("alarm.state")) {
+            onAlarmState(payload, true);
+        } else if (event.equals("ks.device.key")) {
             onKey(payload);
-        } else if (!snoozedEntity.isEmpty() && event.equals("ks.ha.entity." + snoozedEntity)) {
-            onSnoozedUntil(payload.get("state"));
-        } else if (event.equals("ks.ha.entity." + entity)) {
-            boolean ringing = "on".equals(payload.get("state"));
-            host.log("snooze-screensaver event " + payload.get("state") + " showing=" + showing);
-            if (ringing == showing) return;
-            if (ringing) {
-                // A snooze makes the alarm ring again: only a long pause means a new alarm.
-                if (System.currentTimeMillis() - lastSnooze > resetMs) count = 0;
-                show();
-            } else {
-                hide();
-                checkStoppedLater();
-            }
         }
     }
 
     /**
-     * The ringing ended. Unless it was a snooze, the alarm was stopped, wherever that happened (KS's alarm
-     * screen, a dashboard, Home Assistant): start counting from zero. Checked a few seconds later, once the
-     * snoozed-until sensor has had time to report a snooze.
+     * A new alarm state. A new ring time starts the count again. Going from ringing to snoozed counts a snooze
+     * (wherever it was snoozed) and says it; going to idle after a stop this plugin asked for says the stop text.
      */
-    private void checkStoppedLater() {
-        main.postDelayed(new Runnable() {
-            @Override public void run() {
-                if (host == null || showing) return;
-                long now = System.currentTimeMillis();
-                boolean snoozed = snoozedEntity.isEmpty() ? now - lastSnooze < 15000L : snoozedUntil > now;
-                if (!snoozed) resetCount();
-            }
-        }, 5000);
-    }
-
-    private void resetCount() {
-        count = 0;
-        lastSnooze = 0;
-        lastKeySnooze = 0;
-    }
-
-    /**
-     * The snoozed-until sensor changed. A new time in the future means a snooze: the plugin learns the snooze
-     * length from it (and saves it), and counts a snooze made elsewhere, such as on KS's own alarm screen.
-     */
-    private void onSnoozedUntil(Object state) {
-        long until = parseTime(state);
-        long now = System.currentTimeMillis();
-        long previous = snoozedUntil;
-        snoozedUntil = until > now ? until : 0;
-        if (snoozedUntil == 0) {
-            // A snooze ended well before its time and the alarm is not ringing: it was stopped.
-            if (previous - now > 30000L && !showing) resetCount();
-            return;
+    private synchronized void onAlarmState(Map<String, Object> state, boolean live) {
+        String nextPhase = state.get("phase") instanceof String ? (String) state.get("phase") : "idle";
+        String nextAt = text(state.get("at"));
+        long nextUntil = parseTime(state.get("snoozedUntil"));
+        String previous = phase;
+        if (!nextAt.isEmpty() && !nextAt.equals(ringAt)) {
+            ringAt = nextAt;
+            count = 0;
         }
-        if (snoozedUntil == previous) return;
-        int minutes = (int) Math.round((snoozedUntil - now) / 60000.0);
-        if (minutes >= 1 && minutes <= 120 && minutes != snoozeMinutes) {
-            snoozeMinutes = minutes;
-            try {
-                Map<String, Object> change = new HashMap<String, Object>();
-                change.put("snoozeMinutes", minutes);
-                host.updateSettings(change);
-            } catch (RuntimeException ignored) {
-                // Kept for this session only.
-            }
-        }
-        if (now - lastSnooze > 10000L) {
-            // Not this plugin's own snooze: count it too.
+        phase = nextPhase;
+        snoozedUntil = nextUntil;
+        if (live && "snoozed".equals(nextPhase) && !"snoozed".equals(previous)) {
             count++;
-            lastSnooze = now;
-            if (showing) refresh();
+            long now = System.currentTimeMillis();
+            if (nextUntil > now) snoozeMinutes = (int) Math.max(1, Math.round((nextUntil - now) / 60000.0));
+            boolean last = maxSnooze > 0 && count >= maxSnooze;
+            say(last ? pick(lastText, "last") : pick(tapText, "tap"));
         }
+        if ("idle".equals(nextPhase)) {
+            if (live && stopRequested && !"idle".equals(previous)) say(pick(stopText, "stop"));
+            stopRequested = false;
+            count = 0;
+            ringAt = "";
+        }
+        boolean ringing = "ringing".equals(nextPhase);
+        if (ringing) show(); else if (showing) hide();
     }
 
-    /** Home Assistant timestamps such as 2026-11-23T19:45:00.123456+00:00; 0 for unknown or anything else. */
+    /** ISO 8601 times such as 2026-11-23T19:45:00.123Z; 0 for null or anything else. */
     static long parseTime(Object state) {
         if (!(state instanceof String)) return 0;
         String text = ((String) state).trim().replaceFirst("\\.\\d+", "");
@@ -297,6 +224,52 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         } catch (Exception notATime) {
             return 0;
         }
+    }
+
+    private boolean atLimit() {
+        return maxSnooze > 0 && count >= maxSnooze;
+    }
+
+    /** Main thread. Snooze, unless the last allowed snooze is used: then the alarm keeps ringing. */
+    private void doSnooze() {
+        if (atLimit()) return;
+        command("snoozeAlarm", Collections.<String, Object>emptyMap());
+    }
+
+    /** Main thread. */
+    private void doStop() {
+        stopRequested = true;
+        command("stopAlarm", Collections.<String, Object>emptyMap());
+    }
+
+    private void command(final String name, Map<String, Object> arguments) {
+        final PluginHost current = host;
+        if (current == null) return;
+        try {
+            current.executeCommand(name, arguments, new PluginHost.CommandCallback() {
+                @Override public void onResult(boolean ok, Object data, String error) {
+                    if (!ok) {
+                        if ("stopAlarm".equals(name)) stopRequested = false;
+                        current.log("snooze-screensaver " + name + " failed: " + error);
+                    }
+                }
+            });
+        } catch (RuntimeException failure) {
+            current.log("snooze-screensaver " + name + " failed: " + failure);
+        }
+    }
+
+    /** Speaks with the alarm's voice and volume. {n} snooze count, {total} minutes so far, {length}, {max}. */
+    private void say(String template) {
+        if (template.isEmpty()) return;
+        int length = snoozeMinutes;
+        String words = template.replace("{n}", String.valueOf(count))
+            .replace("{total}", String.valueOf(count * length))
+            .replace("{min}", String.valueOf(count * length))
+            .replace("{length}", String.valueOf(length))
+            .replace("{max}", String.valueOf(maxSnooze));
+        if (words.length() > 250) words = words.substring(0, 250);
+        command("sayAlarm", Collections.<String, Object>singletonMap("text", words));
     }
 
     /** Maximum snoozes as a number entity, so Home Assistant (a dashboard button) can read and set it. */
@@ -323,13 +296,13 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         change.put("maxSnooze", applied);
         host.updateSettings(change);
         publishMax();
+        if (showing) refresh();
     }
 
     /**
-     * A hardware key while the alarm rings or is snoozed. A key can be a snooze key, a stop key or both.
-     * Both: the first press snoozes at once, a second press within the key window stops. Stop key: a press
-     * stops, also while snoozed. Snooze key: a press snoozes; a second press within the window is ignored.
-     * Otherwise keys are left alone.
+     * A hardware key. A key can be a snooze key, a stop key or both. Both: the first press snoozes at once, a
+     * second press within the key window stops. Stop key: a press stops, also while snoozed. Snooze key: a
+     * press snoozes; a second press within the window is ignored. Otherwise keys are left alone.
      */
     private void onKey(Map<String, Object> payload) {
         if (!"down".equals(payload.get("action"))) return;
@@ -339,28 +312,26 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         final boolean snoozeKey = snoozeKeys.contains(key);
         final boolean stopKey = stopKeys.contains(key);
         if (!snoozeKey && !stopKey) return;
-        final boolean ringing = showing;
+        final String current = phase;
+        if (!"ringing".equals(current) && !"snoozed".equals(current) && !"sunrise".equals(current)) return;
         main.post(new Runnable() {
-            @Override public void run() { handleKey(ringing, snoozeKey, stopKey); }
+            @Override public void run() { handleKey(current, snoozeKey, stopKey); }
         });
     }
 
     /** Main thread. */
-    private void handleKey(boolean ringing, boolean snoozeKey, boolean stopKey) {
+    private void handleKey(String current, boolean snoozeKey, boolean stopKey) {
         long now = System.currentTimeMillis();
+        boolean ringing = "ringing".equals(current);
         boolean secondPress = lastKeySnooze > 0 && now - lastKeySnooze <= keyWindowMs;
-        boolean snoozed = !ringing && (snoozedEntity.isEmpty()
-            ? lastSnooze > 0 && now < lastSnooze + snoozeMinutes * 60000L + 120000L
-            : now < snoozedUntil);
-        if (stopKey && (secondPress || snoozed || (ringing && !snoozeKey))) {
+        if (stopKey && (secondPress || !ringing || !snoozeKey || atLimit())) {
             cancelPending();
             lastKeySnooze = 0;
             doStop();
-        } else if (snoozeKey && ringing && !secondPress) {
+        } else if (snoozeKey && ringing && !secondPress && !atLimit()) {
             cancelPending();
-            int before = count;
+            lastKeySnooze = now;
             doSnooze();
-            lastKeySnooze = count > before ? now : 0;
         }
     }
 
@@ -369,11 +340,15 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         showing = false;
         main.removeCallbacksAndMessages(null);
         host = null;
-        entity = "";
-        snoozedEntity = "";
+    }
+
+    private void refresh() {
+        if (showing) show();
     }
 
     private void show() {
+        final PluginHost current = host;
+        if (current == null) return;
         showing = true;
         OverlaySpec spec = OverlaySpec.fullScreen().closeOnBack(false);
         try {
@@ -381,25 +356,25 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         } catch (LinkageError olderHost) {
             // Older KS versions have no layers: the overlay then draws over the dashboard only.
         }
-        final String shownHint = hint;
+        final String shownHint = atLimit() && !hint.isEmpty() ? builtin("last-hint", language) : hint;
         final String shownLabel = count > 0 ? label + " ×" + count : label;
         final boolean shownClock = showClock;
         try {
-            host.showOverlay(OVERLAY, spec, new OverlayFactory() {
+            current.showOverlay(OVERLAY, spec, new OverlayFactory() {
                 @Override public View create(Context context, KsTheme theme) {
                     return build(context, theme, shownClock, shownLabel, shownHint);
                 }
             });
         } catch (RuntimeException failure) {
-            host.log("snooze-screensaver overlay failed: " + failure);
-            host.status("Overlay failed: " + failure.getMessage(), true);
+            current.log("snooze-screensaver overlay failed: " + failure);
         }
     }
 
     private void hide() {
         showing = false;
         main.post(new Runnable() { @Override public void run() { cancelPending(); } });
-        if (host != null) host.hideOverlay(OVERLAY);
+        PluginHost current = host;
+        if (current != null) current.hideOverlay(OVERLAY);
     }
 
     private void cancelPending() {
@@ -454,7 +429,7 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         return root;
     }
 
-    /** Main thread. The first tap waits for the window, a second one inside it runs the double tap action. */
+    /** Main thread. The first tap waits for the window, a second one inside it stops. */
     private void onTap() {
         if (pendingTap != null) {
             cancelPending();
@@ -468,90 +443,5 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
             }
         };
         main.postDelayed(pendingTap, windowMs);
-    }
-
-    /** Main thread. Tap: snooze and count, or at the limit only the limit action. */
-    private void doSnooze() {
-        if (maxSnooze > 0 && count >= maxSnooze) {
-            say(pick(maxText, "max"), maxVolume);
-            return;
-        }
-        count++;
-        lastSnooze = System.currentTimeMillis();
-        say(pick(tapText, "tap"), tapVolume);
-        run(TAP);
-        refresh();
-    }
-
-    /** Main thread. Double tap: say, stop, and start counting from zero. */
-    private void doStop() {
-        say(pick(stopText, "stop"), stopVolume);
-        run(DOUBLE_TAP);
-        resetCount();
-    }
-
-    private synchronized void refresh() {
-        if (showing && host != null) show();
-    }
-
-    /** Speaks the text through the chosen Home Assistant service. {n} is the snooze count, {max} the limit. */
-    private void say(String template, int volumePercent) {
-        PluginHost current = host;
-        final String service = sayService;
-        if (current == null || template.isEmpty() || service.isEmpty()) return;
-        int dot = service.indexOf('.');
-        if (dot <= 0 || dot == service.length() - 1) {
-            current.status("Speak service must look like domain.service", true);
-            return;
-        }
-        Map<String, Object> data = new HashMap<String, Object>();
-        try {
-            String extraData = sayData.isEmpty() && isKioskAnnounce(service) ? ESPHOME_DEFAULTS : sayData;
-            if (!extraData.isEmpty()) {
-                JSONObject extra = new JSONObject(extraData);
-                for (Iterator<String> keys = extra.keys(); keys.hasNext();) {
-                    String key = keys.next();
-                    Object value = extra.get(key);
-                    if (value != JSONObject.NULL) data.put(key, value);
-                }
-            }
-        } catch (Exception badJson) {
-            current.status("Speak data is not valid JSON: " + badJson.getMessage(), true);
-            return;
-        }
-        if (volumePercent > 0 && isKioskAnnounce(service)) data.put("volume", volumePercent / 100.0);
-        data.put("message", template.replace("{n}", String.valueOf(count)).replace("{max}", String.valueOf(maxSnooze))
-            .replace("{total}", String.valueOf(count * snoozeMinutes))
-            .replace("{min}", String.valueOf(count * snoozeMinutes))
-            .replace("{length}", String.valueOf(snoozeMinutes)));
-        Map<String, Object> message = new HashMap<String, Object>();
-        message.put("type", "call_service");
-        message.put("domain", service.substring(0, dot));
-        message.put("service", service.substring(dot + 1));
-        message.put("service_data", data);
-        final PluginHost report = current;
-        try {
-            current.haCall(message, new PluginHost.CommandCallback() {
-                @Override public void onResult(boolean ok, Object result, String error) {
-                    if (!ok) report.status("Speaking failed: " + error, true);
-                }
-            });
-        } catch (RuntimeException failure) {
-            current.status("Speaking failed: " + failure.getMessage(), true);
-        }
-    }
-
-    private void run(final String setting) {
-        final PluginHost current = host;
-        if (current == null) return;
-        try {
-            current.runAction(setting, new PluginHost.CommandCallback() {
-                @Override public void onResult(boolean ok, Object data, String error) {
-                    if (!ok) current.status(setting + ": " + error, true);
-                }
-            });
-        } catch (RuntimeException failure) {
-            current.status(setting + ": " + failure.getMessage(), true);
-        }
     }
 }
