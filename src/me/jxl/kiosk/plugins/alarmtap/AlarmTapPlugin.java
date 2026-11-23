@@ -16,6 +16,9 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.Iterator;
+import java.util.Locale;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import org.json.JSONObject;
 import java.util.regex.Pattern;
@@ -59,6 +62,9 @@ public final class AlarmTapPlugin implements KioskPlugin {
     /** Main thread only: when a key last snoozed, for the second press that stops. */
     private long lastKeySnooze;
     private volatile String sayService = "";
+    /** The kiosk's announce service found in Home Assistant when Speak service is empty. */
+    private volatile String detectedService = "";
+    private volatile String language = "en";
     private volatile String sayData = "";
     private volatile String tapText = "";
     private volatile String stopText = "";
@@ -81,8 +87,10 @@ public final class AlarmTapPlugin implements KioskPlugin {
         if (host == null) return;
         Object ms = settings.get("doubleTapMs");
         windowMs = ms instanceof Number ? ((Number) ms).intValue() : 350;
-        String nextHint = text(settings.get("hint"));
-        String nextLabel = text(settings.get("snoozeLabel"));
+        language = language(text(settings.get("language")));
+        String nextHint = pick(text(settings.get("hint")), "hint");
+        String nextLabel = pick(text(settings.get("snoozeLabel")), "label");
+        if (nextLabel.isEmpty()) nextLabel = builtin("label", language);
         boolean nextClock = !Boolean.FALSE.equals(settings.get("showClock"));
         boolean textChanged = !nextHint.equals(hint) || !nextLabel.equals(label) || nextClock != showClock;
         hint = nextHint;
@@ -104,6 +112,7 @@ public final class AlarmTapPlugin implements KioskPlugin {
         Object reset = settings.get("resetMinutes");
         resetMs = (reset instanceof Number ? Math.max(1, ((Number) reset).intValue()) : 30) * 60000L;
         sayService = text(settings.get("sayService"));
+        if (sayService.isEmpty() && detectedService.isEmpty()) detectService();
         sayData = text(settings.get("sayData"));
         tapText = text(settings.get("tapText"));
         stopText = text(settings.get("stopText"));
@@ -122,6 +131,66 @@ public final class AlarmTapPlugin implements KioskPlugin {
 
     private static int percent(Object value, int fallback) {
         return value instanceof Number ? Math.max(0, Math.min(100, ((Number) value).intValue())) : fallback;
+    }
+
+    /** "auto" follows the device language; German and English are built in, everything else is English. */
+    static String language(String setting) {
+        if (setting.equals("Deutsch")) return "de";
+        if (setting.equals("English")) return "en";
+        return Locale.getDefault().getLanguage().equals("de") ? "de" : "en";
+    }
+
+    static String builtin(String key, String lang) {
+        boolean de = lang.equals("de");
+        switch (key) {
+            case "label": return de ? "Schlummern" : "Snooze";
+            case "hint": return de ? "Doppeltippen: Wecker beenden" : "Double tap: end alarm";
+            case "tap": return de ? "Schlummer {n}, {total} Minuten" : "Snooze {n}, {total} minutes";
+            case "stop": return de ? "Wecker beendet" : "Alarm stopped";
+            case "max": return de ? "Maximale Schlummeranzahl erreicht" : "Maximum snoozes reached";
+            default: return "";
+        }
+    }
+
+    /** Empty: the built-in text in the chosen language. A single dash: nothing. Anything else: as typed. */
+    private String pick(String own, String key) {
+        if (own.equals("-")) return "";
+        return own.isEmpty() ? builtin(key, language) : own;
+    }
+
+    /** Looks for the kiosk's own announce action (esphome.*_announce) and uses it when there is exactly one. */
+    private void detectService() {
+        final PluginHost current = host;
+        if (current == null) return;
+        Map<String, Object> message = new HashMap<String, Object>();
+        message.put("type", "get_services");
+        try {
+            current.haCall(message, new PluginHost.CommandCallback() {
+                @Override public void onResult(boolean ok, Object data, String error) {
+                    if (!ok || !(data instanceof Map)) {
+                        current.status("Could not read the Home Assistant services: " + error, true);
+                        return;
+                    }
+                    Object esphome = ((Map<?, ?>) data).get("esphome");
+                    List<String> found = new ArrayList<String>();
+                    if (esphome instanceof Map) {
+                        for (Object name : ((Map<?, ?>) esphome).keySet()) {
+                            if (String.valueOf(name).endsWith("_announce")) found.add("esphome." + name);
+                        }
+                    }
+                    if (found.size() == 1) {
+                        detectedService = found.get(0);
+                        current.status("Speaking through " + detectedService, false);
+                    } else if (found.isEmpty()) {
+                        current.status("No announce action found. Enter a Speak service.", true);
+                    } else {
+                        current.status("Several kiosks found, enter one as Speak service: " + found, true);
+                    }
+                }
+            });
+        } catch (RuntimeException failure) {
+            current.status("Could not read the Home Assistant services: " + failure.getMessage(), true);
+        }
     }
 
     static Set<String> parseKeys(String list) {
@@ -311,19 +380,19 @@ public final class AlarmTapPlugin implements KioskPlugin {
     /** Main thread. Tap: snooze and count, or at the limit only the limit action. */
     private void doSnooze() {
         if (maxSnooze > 0 && count >= maxSnooze) {
-            say(maxText, maxVolume);
+            say(pick(maxText, "max"), maxVolume);
             return;
         }
         count++;
         lastSnooze = System.currentTimeMillis();
-        say(tapText, tapVolume);
+        say(pick(tapText, "tap"), tapVolume);
         run(TAP);
         refresh();
     }
 
     /** Main thread. Double tap: say, stop, and start counting from zero. */
     private void doStop() {
-        say(stopText, stopVolume);
+        say(pick(stopText, "stop"), stopVolume);
         run(DOUBLE_TAP);
         count = 0;
         lastSnooze = 0;
@@ -336,9 +405,10 @@ public final class AlarmTapPlugin implements KioskPlugin {
     /** Speaks the text through the chosen Home Assistant service. {n} is the snooze count, {max} the limit. */
     private void say(String template, int volumePercent) {
         PluginHost current = host;
-        if (current == null || template.isEmpty() || sayService.isEmpty()) return;
-        int dot = sayService.indexOf('.');
-        if (dot <= 0 || dot == sayService.length() - 1) {
+        final String service = sayService.isEmpty() ? detectedService : sayService;
+        if (current == null || template.isEmpty() || service.isEmpty()) return;
+        int dot = service.indexOf('.');
+        if (dot <= 0 || dot == service.length() - 1) {
             current.status("Speak service must look like domain.service", true);
             return;
         }
@@ -363,8 +433,8 @@ public final class AlarmTapPlugin implements KioskPlugin {
             .replace("{length}", String.valueOf(snoozeMinutes)));
         Map<String, Object> message = new HashMap<String, Object>();
         message.put("type", "call_service");
-        message.put("domain", sayService.substring(0, dot));
-        message.put("service", sayService.substring(dot + 1));
+        message.put("domain", service.substring(0, dot));
+        message.put("service", service.substring(dot + 1));
         message.put("service_data", data);
         final PluginHost report = current;
         try {

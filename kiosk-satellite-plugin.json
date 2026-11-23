@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "alarm-tap",
   "name": "Alarm Tap",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "apiVersion": 1,
   "minAndroidSdk": 24,
   "minAppVersion": "2026.11.14",
@@ -28,9 +28,9 @@
       "key": "snoozeLabel",
       "type": "string",
       "title": "Snooze label",
-      "default": "Snooze",
+      "default": "",
       "group": "Alarm",
-      "description": "The big text on the ringing screen."
+      "description": "The big text on the ringing screen. Empty: the built-in text in the chosen language."
     },
     {
       "key": "showClock",
@@ -135,33 +135,46 @@
       "key": "hint",
       "type": "string",
       "title": "Hint text",
-      "default": "Double tap: end alarm",
+      "default": "",
       "group": "Alarm",
-      "description": "Shown below the snooze label while the alarm rings. Leave empty for no hint."
+      "description": "Shown below the snooze label while the alarm rings. Empty: the built-in text in the chosen language. A single - means no hint."
+    },
+    {
+      "key": "language",
+      "type": "select",
+      "title": "Language",
+      "default": "Auto",
+      "options": [
+        "Auto",
+        "English",
+        "Deutsch"
+      ],
+      "group": "Speech",
+      "description": "Language of the built-in texts on screen and in speech. Auto follows the device language (German or English, otherwise English). Texts you type are used as they are."
     },
     {
       "key": "sayService",
       "type": "string",
       "title": "Speak service",
-      "default": "esphome.ks_alarm_clock_albert_announce",
+      "default": "",
       "group": "Speech",
-      "description": "Home Assistant service that speaks, written as domain.service, for example tts.speak. Empty means no speech."
+      "description": "Home Assistant service that speaks, as domain.service, for example tts.speak. Empty: the plugin looks for the kiosk's own announce action (esphome.<name>_announce) and uses it when there is exactly one. The status line says which one it found."
     },
     {
       "key": "sayData",
       "type": "string",
       "title": "Extra service data (JSON)",
-      "default": "{\"url\": \"\", \"volume\": 0.5, \"repeat\": 0, \"repeat_pause\": 0, \"chime\": false, \"chime_file\": \"\", \"tts_engine\": \"\", \"tts_language\": \"\", \"tts_voice\": \"\", \"audio_only\": true}",
+      "default": "{\"url\": \"\", \"repeat\": 0, \"repeat_pause\": 0, \"chime\": false, \"chime_file\": \"\", \"tts_engine\": \"\", \"tts_language\": \"\", \"tts_voice\": \"\", \"audio_only\": true}",
       "group": "Speech",
-      "description": "Further fields the service needs besides the text, as JSON. The text is sent as \"message\". Example for tts.speak: {\"entity_id\": \"tts.home_assistant_cloud\", \"media_player_entity_id\": \"media_player.clock\"}."
+      "description": "Further fields the service needs besides the text, as JSON. The text is sent as \"message\", the volume from the volume settings. The default fits the kiosk's own announce action. Example for tts.speak: {\"entity_id\": \"tts.home_assistant_cloud\", \"media_player_entity_id\": \"media_player.clock\"}."
     },
     {
       "key": "tapText",
       "type": "string",
       "title": "Text on tap",
-      "default": "Schlummer {n}, {total} Minuten",
+      "default": "",
       "group": "Speech",
-      "description": "Spoken when a tap or key snoozes. Empty means silence. Placeholders: {n} = number of this snooze, {total} = total snooze minutes so far ({n} × Snooze length), {length} = minutes of one snooze, {max} = Maximum snoozes."
+      "description": "Spoken when a tap or key snoozes. Empty: the built-in text in the chosen language. A single - means silence. Placeholders: {n} = number of this snooze, {total} = total snooze minutes so far ({n} × Snooze length), {length} = minutes of one snooze, {max} = Maximum snoozes."
     },
     {
       "key": "tapVolume",
@@ -179,9 +192,9 @@
       "key": "stopText",
       "type": "string",
       "title": "Text on double tap",
-      "default": "Wecker beendet",
+      "default": "",
       "group": "Speech",
-      "description": "Spoken when the alarm is stopped. Empty means silence. Placeholders: {n} = number of this snooze, {total} = total snooze minutes so far ({n} × Snooze length), {length} = minutes of one snooze, {max} = Maximum snoozes."
+      "description": "Spoken when the alarm is stopped. Empty: the built-in text in the chosen language. A single - means silence. Placeholders: {n} = number of this snooze, {total} = total snooze minutes so far ({n} × Snooze length), {length} = minutes of one snooze, {max} = Maximum snoozes."
     },
     {
       "key": "stopVolume",
@@ -199,9 +212,9 @@
       "key": "maxText",
       "type": "string",
       "title": "Text at the limit",
-      "default": "Maximale Schlummeranzahl erreicht",
+      "default": "",
       "group": "Speech",
-      "description": "Spoken when a snooze is refused because the maximum is reached. Empty means silence. Placeholders: {n} = number of this snooze, {total} = total snooze minutes so far ({n} × Snooze length), {length} = minutes of one snooze, {max} = Maximum snoozes."
+      "description": "Spoken when a snooze is refused because the maximum is reached. Empty: the built-in text in the chosen language. A single - means silence. Placeholders: {n} = number of this snooze, {total} = total snooze minutes so far ({n} × Snooze length), {length} = minutes of one snooze, {max} = Maximum snoozes."
     },
     {
       "key": "maxVolume",

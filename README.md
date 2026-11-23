@@ -9,7 +9,7 @@ A Kiosk Satellite plugin. While an alarm rings, a tap anywhere on the screen run
 - One tap runs the **Tap action** after a short wait. Two quick taps run the **Double tap action** instead.
 - Both are Kiosk Satellite action settings, so you pick anything the Gestures page offers, such as the KS actions for snooze and stop, a Home Assistant service or a script. The plugin does not know what they do.
 - The plugin counts the snoozes itself. With **Maximum snoozes** set, a tap that would exceed it speaks the limit text instead of snoozing, so the alarm keeps ringing. A double tap stops the alarm and resets the count. The count also starts again when the alarm rings after a long pause.
-- Each step can speak a text through a Home Assistant service you name (default: the kiosk's own announce service). Placeholders: `{n}` number of this snooze, `{total}` total snooze minutes (`{n}` × **Snooze length**), `{length}` minutes of one snooze, `{max}` the limit.
+- Each step can speak a text through a Home Assistant service. With **Speak service** empty, the plugin finds the kiosk's own announce action (`esphome.<name>_announce`) by itself when there is exactly one; with several kiosks, enter it. Built-in texts come in English and German (**Language**: auto follows the device), your own texts replace them, a single `-` silences a step. Placeholders: `{n}` number of this snooze, `{total}` total snooze minutes (`{n}` × **Snooze length**), `{length}` minutes of one snooze, `{max}` the limit.
 - Hardware keys: each key can snooze, stop or both. A key that does both snoozes at once and stops on a second press within the key window. A stop key also stops the alarm while it is snoozed (the plugin remembers its own snooze and the snooze length). Keys work without the overlay. Turn on Kiosk Satellite's option to swallow the volume keys if they should not change the volume.
 - When the entity turns `off`, the overlay goes away.
 
@@ -36,6 +36,9 @@ A Kiosk Satellite plugin. While an alarm rings, a tap anywhere on the screen run
 A single tap runs after the double tap window, so a shorter window makes snoozing feel quicker.
 
 ## Requirements
+
+The ringing entity must reach the kiosk. If you filter entity updates for wall panels (for example with Lite Resources), add it to the kept entities.
+
 
 Kiosk Satellite 2026.11.14 or newer. The plugin needs the `overlay`, `host.read` and `ha` capabilities. `ha` is used for two things: watching the one entity you pick and calling the speak service you name. Nothing else is sent to Home Assistant.
 
