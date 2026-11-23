@@ -225,8 +225,31 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
                 show();
             } else {
                 hide();
+                checkStoppedLater();
             }
         }
+    }
+
+    /**
+     * The ringing ended. Unless it was a snooze, the alarm was stopped, wherever that happened (KS's alarm
+     * screen, a dashboard, Home Assistant): start counting from zero. Checked a few seconds later, once the
+     * snoozed-until sensor has had time to report a snooze.
+     */
+    private void checkStoppedLater() {
+        main.postDelayed(new Runnable() {
+            @Override public void run() {
+                if (host == null || showing) return;
+                long now = System.currentTimeMillis();
+                boolean snoozed = snoozedEntity.isEmpty() ? now - lastSnooze < 15000L : snoozedUntil > now;
+                if (!snoozed) resetCount();
+            }
+        }, 5000);
+    }
+
+    private void resetCount() {
+        count = 0;
+        lastSnooze = 0;
+        lastKeySnooze = 0;
     }
 
     /**
@@ -238,7 +261,12 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         long now = System.currentTimeMillis();
         long previous = snoozedUntil;
         snoozedUntil = until > now ? until : 0;
-        if (snoozedUntil == 0 || snoozedUntil == previous) return;
+        if (snoozedUntil == 0) {
+            // A snooze ended well before its time and the alarm is not ringing: it was stopped.
+            if (previous - now > 30000L && !showing) resetCount();
+            return;
+        }
+        if (snoozedUntil == previous) return;
         int minutes = (int) Math.round((snoozedUntil - now) / 60000.0);
         if (minutes >= 1 && minutes <= 120 && minutes != snoozeMinutes) {
             snoozeMinutes = minutes;
@@ -459,8 +487,7 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
     private void doStop() {
         say(pick(stopText, "stop"), stopVolume);
         run(DOUBLE_TAP);
-        count = 0;
-        lastSnooze = 0;
+        resetCount();
     }
 
     private synchronized void refresh() {
