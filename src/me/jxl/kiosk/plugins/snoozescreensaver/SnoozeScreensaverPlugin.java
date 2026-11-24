@@ -318,7 +318,7 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
     }
 
     /**
-     * Speaks the text: with KS's alarm voice at the alarm volume, or through the chosen Home Assistant action at
+     * Speaks the text: with KS's alarm voice (quieter via percent), or through the chosen Home Assistant action at
      * its own volume. {n} snooze count, {total} minutes so far, {length} one snooze, {max} the limit.
      */
     private void say(String template, int volumePercent) {
@@ -333,7 +333,35 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         if (speakViaHa && !sayService.isEmpty()) {
             sayViaHa(words, volumePercent);
         } else {
-            command("sayAlarm", Collections.<String, Object>singletonMap("text", words));
+            sayAlarm(words, volumePercent);
+        }
+    }
+
+    /**
+     * KS alarm voice. KS 2026.11.31 and newer take percent (5 to 100, as text, never louder than the Alarm volume).
+     * Older KS refuses it with "Invalid host command arguments"; then the text is said once without it.
+     */
+    private void sayAlarm(final String words, int volumePercent) {
+        final PluginHost current = host;
+        if (current == null) return;
+        Map<String, Object> arguments = new HashMap<String, Object>();
+        arguments.put("text", words);
+        if (volumePercent > 0) arguments.put("percent", String.valueOf(Math.max(5, Math.min(100, volumePercent))));
+        final boolean withPercent = arguments.containsKey("percent");
+        try {
+            current.executeCommand("sayAlarm", arguments, new PluginHost.CommandCallback() {
+                @Override public void onResult(boolean ok, Object data, String error) {
+                    if (ok) return;
+                    if (withPercent && error != null && error.contains("Invalid host command arguments")) {
+                        current.log("snooze-screensaver: this KS has no percent for sayAlarm, saying at alarm volume");
+                        command("sayAlarm", Collections.<String, Object>singletonMap("text", words));
+                    } else {
+                        current.log("snooze-screensaver sayAlarm failed: " + error);
+                    }
+                }
+            });
+        } catch (RuntimeException failure) {
+            current.log("snooze-screensaver sayAlarm failed: " + failure);
         }
     }
 

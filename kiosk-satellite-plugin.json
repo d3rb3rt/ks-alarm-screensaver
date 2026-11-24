@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "snooze-screensaver",
   "name": "Snooze Screensaver",
-  "version": "3.2.2",
+  "version": "3.3.0",
   "apiVersion": 1,
   "minAndroidSdk": 24,
   "minAppVersion": "2026.11.30",
@@ -116,7 +116,7 @@
         "Home Assistant"
       ],
       "group": "Speech",
-      "description": "KS alarm voice speaks at the alarm volume. Home Assistant uses the action below with its own volume per text, until KS offers a volume for alarm speech."
+      "description": "KS alarm voice is local, with a volume per text (KS 2026.11.31 or newer). Home Assistant uses the action below instead and needs HA to be up."
     },
     {
       "key": "sayService",
@@ -152,7 +152,7 @@
       "step": 5,
       "unit": "%",
       "group": "Speech",
-      "description": "Only with Speech through Home Assistant and a kiosk announce action, sent as its volume. 0 sends none."
+      "description": "Percent of the alarm volume with the KS alarm voice (needs KS 2026.11.31, else alarm volume). With Home Assistant: announce volume. 0 changes nothing."
     },
     {
       "key": "stopText",
@@ -172,7 +172,7 @@
       "step": 5,
       "unit": "%",
       "group": "Speech",
-      "description": "Only with Speech through Home Assistant and a kiosk announce action, sent as its volume. 0 sends none."
+      "description": "Percent of the alarm volume with the KS alarm voice (needs KS 2026.11.31, else alarm volume). With Home Assistant: announce volume. 0 changes nothing."
     },
     {
       "key": "lastText",
@@ -192,7 +192,7 @@
       "step": 5,
       "unit": "%",
       "group": "Speech",
-      "description": "Only with Speech through Home Assistant and a kiosk announce action, sent as its volume. 0 sends none."
+      "description": "Percent of the alarm volume with the KS alarm voice (needs KS 2026.11.31, else alarm volume). With Home Assistant: announce volume. 0 changes nothing."
     }
   ]
 }
