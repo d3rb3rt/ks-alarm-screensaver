@@ -319,7 +319,8 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
 
     /**
      * Speaks the text: with KS's alarm voice (quieter via percent), or through the chosen Home Assistant action at
-     * its own volume. {n} snooze count, {total} minutes so far, {length} one snooze, {max} the limit.
+     * its own volume. {n} snooze count, {total} minutes so far, {length} one snooze, {max} the limit,
+     * {time} when the alarm rings again (H:mm, device time zone; empty when not snoozed).
      */
     private void say(String template, int volumePercent) {
         if (template.isEmpty()) return;
@@ -328,7 +329,9 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
             .replace("{total}", String.valueOf(count * length))
             .replace("{min}", String.valueOf(count * length))
             .replace("{length}", String.valueOf(length))
-            .replace("{max}", String.valueOf(maxSnooze));
+            .replace("{max}", String.valueOf(maxSnooze))
+            .replace("{time}", snoozedUntil > 0
+                ? new java.text.SimpleDateFormat("H:mm", Locale.US).format(new java.util.Date(snoozedUntil)) : "");
         if (words.length() > 250) words = words.substring(0, 250);
         if (speakViaHa && !sayService.isEmpty()) {
             sayViaHa(words, volumePercent);
