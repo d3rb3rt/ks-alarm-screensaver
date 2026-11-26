@@ -3,6 +3,7 @@ package me.jxl.kiosk.plugins.snoozescreensaver;
 
 import android.content.Context;
 import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
@@ -89,6 +90,13 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
     private Runnable pendingHold;
     /** Main thread only: updates the countdown to the next ring once a second while snoozed. */
     private Runnable ticker;
+    /** True while the short "alarm stopped" view is shown after a stop. */
+    private volatile boolean stoppedView;
+    /** How long the "alarm stopped" view stays (ms). */
+    private static final long STOPPED_MS = 2500;
+    private final Runnable stoppedHide = new Runnable() {
+        @Override public void run() { if (stoppedView) hide(); }
+    };
 
     @Override
     public synchronized void start(PluginHost host, Map<String, Object> settings) {
@@ -175,7 +183,9 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
             case "label": return de ? "Schlummern" : "Snooze";
             case "hint": return de ? "Tippen: Schlummern" : "Tap: snooze";
             case "last-hint": return de ? "Kein Schlummern mehr" : "No more snoozing";
-            case "snoozed": return de ? "In {remain}" : "In {remain}";
+            case "snoozed": return "{remain}";
+            case "next": return de ? "Nächster Wecker in" : "Next alarm in";
+            case "stopped": return de ? "Wecker beendet" : "Alarm stopped";
             case "left": return de ? "Noch {left}× Schlummern" : "{left} snoozes left";
             case "stop-button": return de ? "Wecker beenden" : "Stop alarm";
             case "tap": return de ? "Schlummer {n}, {total} Minuten" : "Snooze {n}, {total} minutes";
@@ -279,15 +289,19 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
             boolean last = maxSnooze > 0 && count >= maxSnooze;
             say(last ? pick(lastText, "last") : pick(tapText, "tap"), last ? lastVolume : tapVolume);
         }
+        boolean stopped = false;
         if ("idle".equals(nextPhase)) {
-            if (live && stopRequested && !"idle".equals(previous)) say(pick(stopText, "stop"), stopVolume);
+            stopped = live && stopRequested && !"idle".equals(previous);
+            if (stopped) say(pick(stopText, "stop"), stopVolume);
             stopRequested = false;
             count = 0;
             ringAt = "";
         }
         // The overlay stays while snoozed: it shows when the alarm rings again and a stop button.
         boolean active = "ringing".equals(nextPhase) || "snoozed".equals(nextPhase);
-        if (active) show(); else if (showing) hide();
+        if (active) show();
+        else if (stopped) showStopped();
+        else if (showing && !stoppedView) hide();
     }
 
     /** ISO 8601 times such as 2026-11-23T19:45:00.123Z; 0 for null or anything else. */
@@ -524,13 +538,43 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
     }
 
     private void refresh() {
-        if (showing) show();
+        if (showing && !stoppedView) show();
+    }
+
+    /** A short "Alarm stopped" view after a stop, before the screen returns to normal. */
+    private void showStopped() {
+        final PluginHost current = host;
+        if (current == null) return;
+        showing = true;
+        stoppedView = true;
+        main.removeCallbacks(stoppedHide);
+        OverlaySpec spec = OverlaySpec.fullScreen().closeOnBack(false);
+        try {
+            spec = spec.layer(OverlaySpec.LAYER_TOP);
+        } catch (LinkageError olderHost) {
+            // Older KS versions have no layers.
+        }
+        final boolean shownClock = showClock;
+        try {
+            current.showOverlay(OVERLAY, spec, new OverlayFactory() {
+                @Override public View create(Context context, KsTheme theme) {
+                    return build(context, theme, shownClock, builtin("stopped", language), "", "", false, false);
+                }
+            });
+            main.postDelayed(stoppedHide, STOPPED_MS);
+        } catch (RuntimeException failure) {
+            stoppedView = false;
+            showing = false;
+            current.log("snooze-screensaver overlay failed: " + failure);
+        }
     }
 
     private void show() {
         final PluginHost current = host;
         if (current == null) return;
         showing = true;
+        stoppedView = false;
+        main.removeCallbacks(stoppedHide);
         OverlaySpec spec = OverlaySpec.fullScreen().closeOnBack(false);
         try {
             spec = spec.layer(OverlaySpec.LAYER_TOP);
@@ -541,6 +585,7 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         String left = maxSnooze > 0 ? builtin("left", language).replace("{left}", String.valueOf(Math.max(0, maxSnooze - count))) : "";
         final String shownHint;
         final String shownLabel;
+        final String shownPre = snoozed ? builtin("next", language) : "";
         // The stop button: while snoozed, and while ringing once no snooze is left.
         final boolean stopButton = snoozed || atLimit();
         if (snoozed) {
@@ -554,7 +599,7 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         try {
             current.showOverlay(OVERLAY, spec, new OverlayFactory() {
                 @Override public View create(Context context, KsTheme theme) {
-                    return build(context, theme, shownClock, shownLabel, shownHint, stopButton, snoozed);
+                    return build(context, theme, shownClock, shownLabel, shownPre, shownHint, stopButton, snoozed);
                 }
             });
         } catch (RuntimeException failure) {
@@ -564,6 +609,8 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
 
     private void hide() {
         showing = false;
+        stoppedView = false;
+        main.removeCallbacks(stoppedHide);
         main.post(new Runnable() { @Override public void run() { cancelHold(); pressed = false; startTicker(null); } });
         PluginHost current = host;
         if (current != null) current.hideOverlay(OVERLAY);
@@ -574,8 +621,12 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         pendingHold = null;
     }
 
-    private View build(Context context, KsTheme theme, boolean clock, String title, String shownHint, boolean stopButton,
-                       boolean snoozed) {
+    /**
+     * The overlay. While snoozed the column reads: time, snoozes left, "Next alarm in", the big countdown, the stop
+     * button. Otherwise: time, the big label, the hint.
+     */
+    private View build(Context context, KsTheme theme, boolean clock, String title, String pre, String shownHint,
+                       boolean stopButton, boolean snoozed) {
         // Size the text to the screen: small clocks are only about 360 dp high.
         android.util.DisplayMetrics metrics = context.getResources().getDisplayMetrics();
         float heightDp = metrics.heightPixels / metrics.density;
@@ -596,6 +647,10 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
             column.addView(time, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         }
+        if (snoozed) {
+            if (!shownHint.isEmpty()) column.addView(smallText(context, theme, shownHint, 30 * scale, clock ? 14 * scale : 0));
+            if (!pre.isEmpty()) column.addView(smallText(context, theme, pre, 36 * scale, 10 * scale));
+        }
         TextView big = new TextView(context);
         big.setText(title);
         big.setGravity(Gravity.CENTER);
@@ -605,10 +660,10 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         big.setMaxLines(1);
         LinearLayout.LayoutParams bigParams = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        bigParams.topMargin = theme.px(clock ? Math.round(16 * scale) : 0);
+        bigParams.topMargin = theme.px(snoozed ? Math.round(2 * scale) : clock ? Math.round(16 * scale) : 0);
         column.addView(big, bigParams);
         startTicker(snoozed ? big : null);
-        if (!shownHint.isEmpty()) {
+        if (!snoozed && !shownHint.isEmpty()) {
             TextView small = new TextView(context);
             small.setText(shownHint);
             small.setGravity(Gravity.CENTER);
@@ -626,6 +681,12 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
             stop.setText(builtin("stop-button", language));
             theme.stylePill(stop, true);
             theme.styleText(stop, Math.round(30 * scale), 600, "onPrimary");
+            // Red, so it reads as the way out.
+            GradientDrawable red = new GradientDrawable();
+            red.setCornerRadius(theme.px(100));
+            red.setColor(0xFFD64545);
+            stop.setBackground(red);
+            stop.setTextColor(Color.WHITE);
             stop.setPadding(theme.px(Math.round(48 * scale)), theme.px(Math.round(20 * scale)),
                 theme.px(Math.round(48 * scale)), theme.px(Math.round(20 * scale)));
             stop.setOnClickListener(new View.OnClickListener() {
@@ -662,7 +723,22 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         return root;
     }
 
-    /** "In 4:32": time left until the snoozed alarm rings again. */
+    /** A line of white text in the column, sized and spaced for the screen. */
+    private TextView smallText(Context context, KsTheme theme, String text, float sp, float topMarginDp) {
+        TextView view = new TextView(context);
+        view.setText(text);
+        view.setGravity(Gravity.CENTER);
+        theme.styleText(view, Math.round(sp), 400, "onSurface");
+        view.setTextColor(0xE6FFFFFF);
+        view.setIncludeFontPadding(false);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.topMargin = theme.px(Math.round(topMarginDp));
+        view.setLayoutParams(params);
+        return view;
+    }
+
+    /** "4:32": time left until the snoozed alarm rings again. */
     private String countdown() {
         long left = Math.max(0, snoozedUntil - System.currentTimeMillis());
         long seconds = (left + 999) / 1000;
