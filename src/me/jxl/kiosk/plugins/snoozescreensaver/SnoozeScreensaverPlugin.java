@@ -87,6 +87,8 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
     private boolean pressCanSnooze;
     /** Main thread only: fires when a press has been held long enough to stop. */
     private Runnable pendingHold;
+    /** Main thread only: updates the countdown to the next ring once a second while snoozed. */
+    private Runnable ticker;
 
     @Override
     public synchronized void start(PluginHost host, Map<String, Object> settings) {
@@ -173,7 +175,7 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
             case "label": return de ? "Schlummern" : "Snooze";
             case "hint": return de ? "Tippen: Schlummern" : "Tap: snooze";
             case "last-hint": return de ? "Kein Schlummern mehr" : "No more snoozing";
-            case "snoozed": return de ? "Bis {until}" : "Until {until}";
+            case "snoozed": return de ? "In {remain}" : "In {remain}";
             case "left": return de ? "Noch {left}× Schlummern" : "{left} snoozes left";
             case "stop-button": return de ? "Wecker beenden" : "Stop alarm";
             case "tap": return de ? "Schlummer {n}, {total} Minuten" : "Snooze {n}, {total} minutes";
@@ -542,7 +544,7 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         // The stop button: while snoozed, and while ringing once no snooze is left.
         final boolean stopButton = snoozed || atLimit();
         if (snoozed) {
-            shownLabel = builtin("snoozed", language).replace("{until}", clockTime(snoozedUntil));
+            shownLabel = countdown();
             shownHint = left;
         } else {
             shownLabel = count > 0 ? label + " ×" + count : label;
@@ -552,7 +554,7 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         try {
             current.showOverlay(OVERLAY, spec, new OverlayFactory() {
                 @Override public View create(Context context, KsTheme theme) {
-                    return build(context, theme, shownClock, shownLabel, shownHint, stopButton);
+                    return build(context, theme, shownClock, shownLabel, shownHint, stopButton, snoozed);
                 }
             });
         } catch (RuntimeException failure) {
@@ -562,7 +564,7 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
 
     private void hide() {
         showing = false;
-        main.post(new Runnable() { @Override public void run() { cancelHold(); pressed = false; } });
+        main.post(new Runnable() { @Override public void run() { cancelHold(); pressed = false; startTicker(null); } });
         PluginHost current = host;
         if (current != null) current.hideOverlay(OVERLAY);
     }
@@ -572,7 +574,8 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         pendingHold = null;
     }
 
-    private View build(Context context, KsTheme theme, boolean clock, String title, String shownHint, boolean stopButton) {
+    private View build(Context context, KsTheme theme, boolean clock, String title, String shownHint, boolean stopButton,
+                       boolean snoozed) {
         // Size the text to the screen: small clocks are only about 360 dp high.
         android.util.DisplayMetrics metrics = context.getResources().getDisplayMetrics();
         float heightDp = metrics.heightPixels / metrics.density;
@@ -604,6 +607,7 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
             LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         bigParams.topMargin = theme.px(clock ? Math.round(16 * scale) : 0);
         column.addView(big, bigParams);
+        startTicker(snoozed ? big : null);
         if (!shownHint.isEmpty()) {
             TextView small = new TextView(context);
             small.setText(shownHint);
@@ -658,9 +662,29 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         return root;
     }
 
-    /** Local HH:mm of a time in ms; empty for 0. */
-    private static String clockTime(long millis) {
-        if (millis <= 0) return "";
-        return new java.text.SimpleDateFormat("HH:mm", Locale.getDefault()).format(new java.util.Date(millis));
+    /** "In 4:32": time left until the snoozed alarm rings again. */
+    private String countdown() {
+        long left = Math.max(0, snoozedUntil - System.currentTimeMillis());
+        long seconds = (left + 999) / 1000;
+        String remain = (seconds / 60) + ":" + (seconds % 60 < 10 ? "0" : "") + (seconds % 60);
+        return builtin("snoozed", language).replace("{remain}", remain);
     }
+
+    /** Main thread. Ticks the countdown in the given view once a second; null stops it. */
+    private void startTicker(final TextView view) {
+        if (ticker != null) main.removeCallbacks(ticker);
+        ticker = null;
+        if (view == null) return;
+        ticker = new Runnable() {
+            @Override public void run() {
+                if (ticker != this || !showing || !"snoozed".equals(phase)) return;
+                view.setText(countdown());
+                long left = snoozedUntil - System.currentTimeMillis();
+                // Next tick just after the next full second of the countdown.
+                main.postDelayed(this, left > 0 ? (left % 1000) + 20 : 1000);
+            }
+        };
+        main.post(ticker);
+    }
+
 }

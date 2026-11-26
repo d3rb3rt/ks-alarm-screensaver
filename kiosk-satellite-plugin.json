@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "snooze-screensaver",
   "name": "Snooze Screensaver",
-  "version": "4.1.1",
+  "version": "4.2.0",
   "apiVersion": 1,
   "minAndroidSdk": 24,
   "minAppVersion": "2026.11.30",
