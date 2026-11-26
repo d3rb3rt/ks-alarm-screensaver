@@ -2,12 +2,12 @@
   "schemaVersion": 1,
   "id": "snooze-screensaver",
   "name": "Snooze Screensaver",
-  "version": "3.4.1",
+  "version": "4.0.0",
   "apiVersion": 1,
   "minAndroidSdk": 24,
   "minAppVersion": "2026.11.30",
   "entryClass": "me.jxl.kiosk.plugins.snoozescreensaver.SnoozeScreensaverPlugin",
-  "description": "While an alarm rings, a black screen shows the time, the snooze count and a hint. A tap or a hardware key snoozes, a double tap or a second key press stops. Counts and limits snoozes and says a short text after each step. Works without Home Assistant; speech uses KS's alarm voice or, with its own volume, a Home Assistant action. Needs the Clock or Weather Mood screensaver with Let alarms take over: KS's own alarm screen covers plugin overlays.",
+  "description": "While an alarm rings, a black screen shows the time, the snooze count and a hint. A tap or a hardware key snoozes; while snoozed the screen stays and shows when the alarm rings again. Holding the screen or a stop key for a moment stops the alarm. Right after a snooze inputs are ignored for a short pause. Counts and limits snoozes and says a short text after each step. Works without Home Assistant; speech uses KS's alarm voice or, with its own volume, a Home Assistant action. Needs the Clock or Weather Mood screensaver with Let alarms take over: KS's own alarm screen covers plugin overlays.",
   "author": "d3rb3rt",
   "license": "MIT",
   "capabilities": [
@@ -43,19 +43,31 @@
       "max": 20,
       "step": 1,
       "group": "Alarm",
-      "description": "0 means unlimited. The last allowed snooze says so; after it a tap no longer snoozes and the alarm rings on until stopped."
+      "description": "0 means unlimited. The last allowed snooze says so; after it a tap no longer snoozes and the alarm rings on until it is held to stop."
     },
     {
-      "key": "doubleTapMs",
+      "key": "holdMs",
       "type": "number",
-      "title": "Double tap window",
-      "default": 350,
-      "min": 200,
-      "max": 600,
-      "step": 50,
+      "title": "Hold to stop",
+      "default": 1000,
+      "min": 500,
+      "max": 3000,
+      "step": 100,
       "unit": "ms",
       "group": "Alarm",
-      "description": "A single tap runs after this wait, unless a second tap follows within it."
+      "description": "How long the screen or a stop key must be held to stop the alarm, while it rings or is snoozed. A short tap only snoozes while it rings."
+    },
+    {
+      "key": "pauseMs",
+      "type": "number",
+      "title": "Pause after snooze",
+      "default": 2500,
+      "min": 0,
+      "max": 5000,
+      "step": 500,
+      "unit": "ms",
+      "group": "Alarm",
+      "description": "Every touch and key is ignored this long after a snooze, so a second finger or a quick second tap does nothing."
     },
     {
       "key": "snoozeKeys",
@@ -63,7 +75,7 @@
       "title": "Snooze keys",
       "default": "VOLUME_UP,VOLUME_DOWN",
       "group": "Keys",
-      "description": "Keys that snooze while the alarm rings (Android names without KEYCODE_, comma-separated). A key also listed under Stop keys stops on a quick second press. Empty: no key snoozes."
+      "description": "Keys that snooze with a short press while the alarm rings (Android names without KEYCODE_, comma-separated). Empty: no key snoozes."
     },
     {
       "key": "stopKeys",
@@ -71,19 +83,7 @@
       "title": "Stop keys",
       "default": "VOLUME_UP,VOLUME_DOWN",
       "group": "Keys",
-      "description": "Keys that stop the alarm, also while it is snoozed. Empty: no key stops. Turn on KS's option to swallow the volume keys if they should not change the volume."
-    },
-    {
-      "key": "keyWindowMs",
-      "type": "number",
-      "title": "Second key press window",
-      "default": 600,
-      "min": 200,
-      "max": 1500,
-      "step": 50,
-      "unit": "ms",
-      "group": "Keys",
-      "description": "A second press of a snooze and stop key within this time stops the alarm. A snooze-only key ignores it."
+      "description": "Keys that stop the alarm when held for the hold time, while it rings or is snoozed. A short press never stops. Empty: no key stops. Turn on KS's option to swallow the volume keys if they should not change the volume."
     },
     {
       "key": "hint",
@@ -91,7 +91,7 @@
       "title": "Hint text",
       "default": "",
       "group": "Alarm",
-      "description": "Shown below the label while the alarm rings. - shows none."
+      "description": "Shown below the label while the alarm rings. - shows none. While snoozed the screen shows when the alarm rings again and how to stop it."
     },
     {
       "key": "language",
@@ -157,7 +157,7 @@
     {
       "key": "stopText",
       "type": "string",
-      "title": "Text on stop (double tap)",
+      "title": "Text on stop (hold)",
       "default": "",
       "group": "Speech",
       "description": "Said after the plugin stops the alarm. - for silence. Placeholders: {n} this snooze, {total} minutes so far, {length} one snooze, {max} the limit, {time} now, {until} next ring."

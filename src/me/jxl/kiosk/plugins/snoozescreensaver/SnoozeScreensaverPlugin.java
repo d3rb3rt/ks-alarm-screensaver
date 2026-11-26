@@ -29,9 +29,12 @@ import me.jxl.kiosk.plugins.PluginHost;
 /**
  * Follows this kiosk's own alarms through the KS alarm API, without Home Assistant. While an alarm rings, a
  * black full screen overlay takes every touch and shows the time, a big snooze label with the snooze count
- * and a short hint. One tap snoozes, two quick taps stop. Hardware keys can do the same. The plugin counts the
- * snoozes of each ring; the last allowed snooze says so, and after it a tap no longer snoozes, so the alarm
- * keeps ringing until it is stopped. After a snooze and a stop it speaks a short text with the alarm's voice.
+ * and a short hint. While it rings a tap snoozes. The overlay stays while the alarm is snoozed and shows when it
+ * rings again; holding the screen (or a stop key) for a moment stops the alarm, in both phases. Right after a
+ * snooze every input is ignored for a short pause, so a second finger or a quick second tap does not stop it.
+ * The plugin counts the snoozes of each ring; the last allowed snooze says so, and after it a tap no longer
+ * snoozes, so the alarm keeps ringing until it is held to stop. After a snooze and a stop it speaks a short text
+ * with the alarm's voice.
  */
 public final class SnoozeScreensaverPlugin implements KioskPlugin {
     static final String OVERLAY = "ring";
@@ -57,10 +60,12 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
     private volatile String label = "Snooze";
     private volatile boolean showClock = true;
     private volatile int maxSnooze;
-    private volatile int windowMs = 350;
+    /** How long the screen or a stop key must be held to stop the alarm. */
+    private volatile int holdMs = 1000;
+    /** Inputs are ignored this long after a snooze. */
+    private volatile int pauseMs = 2500;
     private volatile Set<String> snoozeKeys = new HashSet<String>();
     private volatile Set<String> stopKeys = new HashSet<String>();
-    private volatile int keyWindowMs = 600;
     private volatile String language = "en";
     private volatile String tapText = "";
     private volatile String stopText = "";
@@ -74,10 +79,14 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
     private volatile int lastVolume = 60;
 
     private volatile boolean showing;
-    /** Main thread only: the single tap that waits to see whether a second one follows. */
-    private Runnable pendingTap;
-    /** Main thread only: when a key last snoozed, for the second press that stops. */
-    private long lastKeySnooze;
+    /** Inputs before this time (ms) are ignored: the pause right after a snooze. */
+    private volatile long quietUntil;
+    /** Main thread only: a touch or a key is held down; it snoozes on release unless the hold stopped. */
+    private boolean pressed;
+    private boolean pressStopped;
+    private boolean pressCanSnooze;
+    /** Main thread only: fires when a press has been held long enough to stop. */
+    private Runnable pendingHold;
 
     @Override
     public synchronized void start(PluginHost host, Map<String, Object> settings) {
@@ -104,8 +113,10 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         if (host == null) return;
         // A copy, because the default texts are filled in below and the host's map may be read only.
         Map<String, Object> settings = new HashMap<String, Object>(given);
-        Object ms = settings.get("doubleTapMs");
-        windowMs = ms instanceof Number ? ((Number) ms).intValue() : 350;
+        Object hold = settings.get("holdMs");
+        holdMs = hold instanceof Number ? Math.max(300, ((Number) hold).intValue()) : 1000;
+        Object pause = settings.get("pauseMs");
+        pauseMs = pause instanceof Number ? Math.max(0, ((Number) pause).intValue()) : 2500;
         language = language(text(settings.get("language")));
         fillDefaults(settings);
         String nextHint = pick(text(settings.get("hint")), "hint");
@@ -123,8 +134,6 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         if (maxChanged) publishMax();
         snoozeKeys = parseKeys(text(settings.get("snoozeKeys")));
         stopKeys = parseKeys(text(settings.get("stopKeys")));
-        Object kw = settings.get("keyWindowMs");
-        keyWindowMs = kw instanceof Number ? ((Number) kw).intValue() : 600;
         tapText = text(settings.get("tapText"));
         stopText = text(settings.get("stopText"));
         lastText = text(settings.get("lastText"));
@@ -162,8 +171,11 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         boolean de = lang.equals("de");
         switch (key) {
             case "label": return de ? "Schlummern" : "Snooze";
-            case "hint": return de ? "Doppeltippen: Wecker beenden" : "Double tap: end alarm";
-            case "last-hint": return de ? "Kein Schlummern mehr. Doppeltippen: Wecker beenden" : "No more snoozing. Double tap: end alarm";
+            case "hint": return de ? "Tippen: Schlummern · Halten: Beenden" : "Tap: snooze · Hold: stop";
+            case "last-hint": return de ? "Kein Schlummern mehr · Halten: Beenden" : "No more snoozing · Hold: stop";
+            case "snoozed": return de ? "Bis {until}" : "Until {until}";
+            case "snoozed-hint": return de ? "Halten: Wecker beenden" : "Hold: stop alarm";
+            case "left": return de ? "noch {left}×" : "{left} left";
             case "tap": return de ? "Schlummer {n}, {total} Minuten" : "Snooze {n}, {total} minutes";
             case "last": return de ? "Letzter Schlummer, {total} Minuten" : "Last snooze, {total} minutes";
             case "stop": return de ? "Wecker beendet" : "Alarm stopped";
@@ -186,7 +198,9 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         for (String[] text : TEXTS) {
             String value = text(settings.get(text[0]));
             String wanted = builtin(text[1], language);
-            if (!value.equals(wanted) && (value.isEmpty() || value.equals(builtin(text[1], other)))) {
+            boolean legacy = text[1].equals("hint")
+                && (value.equals("Doppeltippen: Wecker beenden") || value.equals("Double tap: end alarm"));
+            if (!value.equals(wanted) && (value.isEmpty() || legacy || value.equals(builtin(text[1], other)))) {
                 change.put(text[0], wanted);
                 settings.put(text[0], wanted);
             }
@@ -255,6 +269,7 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         phase = nextPhase;
         snoozedUntil = nextUntil;
         if (live && "snoozed".equals(nextPhase) && !"snoozed".equals(previous)) {
+            quietUntil = Math.max(quietUntil, System.currentTimeMillis() + pauseMs);
             count++;
             long now = System.currentTimeMillis();
             if (nextUntil > now) snoozeMinutes = (int) Math.max(1, Math.round((nextUntil - now) / 60000.0));
@@ -267,8 +282,9 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
             count = 0;
             ringAt = "";
         }
-        boolean ringing = "ringing".equals(nextPhase);
-        if (ringing) show(); else if (showing) hide();
+        // The overlay stays while snoozed: it shows when the alarm rings again and is held to stop.
+        boolean active = "ringing".equals(nextPhase) || "snoozed".equals(nextPhase);
+        if (active) show(); else if (showing) hide();
     }
 
     /** ISO 8601 times such as 2026-11-23T19:45:00.123Z; 0 for null or anything else. */
@@ -291,6 +307,7 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
     /** Main thread. Snooze, unless the last allowed snooze is used: then the alarm keeps ringing. */
     private void doSnooze() {
         if (atLimit()) return;
+        quietUntil = System.currentTimeMillis() + pauseMs;
         command("snoozeAlarm", Collections.<String, Object>emptyMap());
     }
 
@@ -439,39 +456,53 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
     }
 
     /**
-     * A hardware key. A key can be a snooze key, a stop key or both. Both: the first press snoozes at once, a
-     * second press within the key window stops. Stop key: a press stops, also while snoozed. Snooze key: a
-     * press snoozes; a second press within the window is ignored. Otherwise keys are left alone.
+     * A hardware key. While the alarm rings, a short press of a snooze key snoozes (on release). Holding a stop
+     * key for the hold time stops the alarm, ringing or snoozed. A short press while snoozed does nothing.
      */
     private void onKey(Map<String, Object> payload) {
-        if (!"down".equals(payload.get("action"))) return;
         Object repeat = payload.get("repeat");
         if (repeat instanceof Number && ((Number) repeat).intValue() != 0) return;
+        final boolean down = "down".equals(payload.get("action"));
+        if (!down && !"up".equals(payload.get("action"))) return;
         String key = String.valueOf(payload.get("key")).toUpperCase();
         final boolean snoozeKey = snoozeKeys.contains(key);
         final boolean stopKey = stopKeys.contains(key);
         if (!snoozeKey && !stopKey) return;
-        final String current = phase;
+        String current = phase;
         if (!"ringing".equals(current) && !"snoozed".equals(current) && !"sunrise".equals(current)) return;
         main.post(new Runnable() {
-            @Override public void run() { handleKey(current, snoozeKey, stopKey); }
+            @Override public void run() {
+                if (down) press(snoozeKey, stopKey); else release(true);
+            }
         });
     }
 
-    /** Main thread. */
-    private void handleKey(String current, boolean snoozeKey, boolean stopKey) {
-        long now = System.currentTimeMillis();
-        boolean ringing = "ringing".equals(current);
-        boolean secondPress = lastKeySnooze > 0 && now - lastKeySnooze <= keyWindowMs;
-        if (stopKey && (secondPress || !ringing || !snoozeKey || atLimit())) {
-            cancelPending();
-            lastKeySnooze = 0;
-            doStop();
-        } else if (snoozeKey && ringing && !secondPress && !atLimit()) {
-            cancelPending();
-            lastKeySnooze = now;
-            doSnooze();
-        }
+    /** Main thread. A touch or key goes down: start the hold that stops, unless inside the pause after a snooze. */
+    private void press(boolean canSnooze, boolean canStop) {
+        cancelHold();
+        pressed = false;
+        if (System.currentTimeMillis() < quietUntil) return;
+        pressed = true;
+        pressStopped = false;
+        pressCanSnooze = canSnooze;
+        if (!canStop) return;
+        pendingHold = new Runnable() {
+            @Override public void run() {
+                pendingHold = null;
+                pressStopped = true;
+                doStop();
+            }
+        };
+        main.postDelayed(pendingHold, holdMs);
+    }
+
+    /** Main thread. The touch or key is let go: a short press snoozes while the alarm rings. */
+    private void release(boolean counts) {
+        cancelHold();
+        if (!pressed) return;
+        pressed = false;
+        if (pressStopped || !counts || !pressCanSnooze) return;
+        if ("ringing".equals(phase) && System.currentTimeMillis() >= quietUntil) doSnooze();
     }
 
     @Override
@@ -495,8 +526,18 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         } catch (LinkageError olderHost) {
             // Older KS versions have no layers: the overlay then draws over the dashboard only.
         }
-        final String shownHint = atLimit() && !hint.isEmpty() ? builtin("last-hint", language) : hint;
-        final String shownLabel = count > 0 ? label + " ×" + count : label;
+        boolean snoozed = "snoozed".equals(phase);
+        String left = maxSnooze > 0 ? builtin("left", language).replace("{left}", String.valueOf(Math.max(0, maxSnooze - count))) : "";
+        final String shownHint;
+        final String shownLabel;
+        if (snoozed) {
+            shownLabel = builtin("snoozed", language).replace("{until}", clockTime(snoozedUntil));
+            String h = builtin("snoozed-hint", language);
+            shownHint = left.isEmpty() ? h : h + " · " + left;
+        } else {
+            shownLabel = count > 0 ? label + " ×" + count : label;
+            shownHint = atLimit() && !hint.isEmpty() ? builtin("last-hint", language) : hint;
+        }
         final boolean shownClock = showClock;
         try {
             current.showOverlay(OVERLAY, spec, new OverlayFactory() {
@@ -511,14 +552,14 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
 
     private void hide() {
         showing = false;
-        main.post(new Runnable() { @Override public void run() { cancelPending(); } });
+        main.post(new Runnable() { @Override public void run() { cancelHold(); pressed = false; } });
         PluginHost current = host;
         if (current != null) current.hideOverlay(OVERLAY);
     }
 
-    private void cancelPending() {
-        if (pendingTap != null) main.removeCallbacks(pendingTap);
-        pendingTap = null;
+    private void cancelHold() {
+        if (pendingHold != null) main.removeCallbacks(pendingHold);
+        pendingHold = null;
     }
 
     private View build(Context context, KsTheme theme, boolean clock, String title, String shownHint) {
@@ -569,7 +610,11 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
             FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
         root.setOnTouchListener(new View.OnTouchListener() {
             @Override public boolean onTouch(View view, MotionEvent event) {
-                if (event.getActionMasked() == MotionEvent.ACTION_UP) onTap();
+                int action = event.getActionMasked();
+                // Only the first finger down and the last finger up count: two fingers make one press.
+                if (action == MotionEvent.ACTION_DOWN) press(true, true);
+                else if (action == MotionEvent.ACTION_UP) release(true);
+                else if (action == MotionEvent.ACTION_CANCEL) release(false);
                 return true;
             }
         });
@@ -586,19 +631,9 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
         return root;
     }
 
-    /** Main thread. The first tap waits for the window, a second one inside it stops. */
-    private void onTap() {
-        if (pendingTap != null) {
-            cancelPending();
-            doStop();
-            return;
-        }
-        pendingTap = new Runnable() {
-            @Override public void run() {
-                pendingTap = null;
-                doSnooze();
-            }
-        };
-        main.postDelayed(pendingTap, windowMs);
+    /** Local HH:mm of a time in ms; empty for 0. */
+    private static String clockTime(long millis) {
+        if (millis <= 0) return "";
+        return new java.text.SimpleDateFormat("HH:mm", Locale.getDefault()).format(new java.util.Date(millis));
     }
 }
