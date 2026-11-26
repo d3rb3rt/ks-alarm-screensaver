@@ -608,12 +608,12 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
             TextView small = new TextView(context);
             small.setText(shownHint);
             small.setGravity(Gravity.CENTER);
-            theme.styleText(small, Math.round(22 * scale), 400, "onSurface");
-            small.setTextColor(0xB3FFFFFF);
+            theme.styleText(small, Math.round(32 * scale), 400, "onSurface");
+            small.setTextColor(0xE6FFFFFF);
             small.setIncludeFontPadding(false);
             LinearLayout.LayoutParams smallParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            smallParams.topMargin = theme.px(Math.round(16 * scale));
+            smallParams.topMargin = theme.px(Math.round(18 * scale));
             column.addView(small, smallParams);
         }
         if (stopButton) {
@@ -621,15 +621,15 @@ public final class SnoozeScreensaverPlugin implements KioskPlugin {
             TextView stop = new TextView(context);
             stop.setText(builtin("stop-button", language));
             theme.stylePill(stop, true);
-            theme.styleText(stop, Math.round(24 * scale), 600, "onPrimary");
-            stop.setPadding(theme.px(Math.round(40 * scale)), theme.px(Math.round(16 * scale)),
-                theme.px(Math.round(40 * scale)), theme.px(Math.round(16 * scale)));
+            theme.styleText(stop, Math.round(30 * scale), 600, "onPrimary");
+            stop.setPadding(theme.px(Math.round(48 * scale)), theme.px(Math.round(20 * scale)),
+                theme.px(Math.round(48 * scale)), theme.px(Math.round(20 * scale)));
             stop.setOnClickListener(new View.OnClickListener() {
                 @Override public void onClick(View view) { onStopButton(); }
             });
             LinearLayout.LayoutParams stopParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            stopParams.topMargin = theme.px(Math.round(28 * scale));
+            stopParams.topMargin = theme.px(Math.round(26 * scale));
             column.addView(stop, stopParams);
         }
         root.addView(column, new FrameLayout.LayoutParams(
